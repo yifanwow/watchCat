@@ -74,7 +74,8 @@ namespace WatchDog
             { "StreamDeck", "Stream Deck" }, { "QQ", "QQ" }, { "QQMusic", "QQ 音乐" }, { "qmbrowser", "QQ 音乐内置浏览器" },
             { "ArmouryCrate", "华硕奥创中心" }, { "ROGLiveService", "ROG Live 服务" }, { "audiodg", "Windows 音频引擎" },
             { "powershell", "PowerShell" }, { "WatchDog", "WatchDog 监控窗口（本程序）" }, { "MemCompression", "Windows 内存压缩（正常）" },
-            { "System", "Windows 内核" }, { "SearchIndexer", "Windows 搜索索引" }, { "Taskmgr", "任务管理器" } };
+            { "System", "Windows 内核" }, { "CorsairCpuIdService", "海盗船 iCUE 读取 CPU 信息的服务" }, { "CorsairService", "海盗船后台服务" },
+            { "ArmouryCrate.Service", "华硕奥创中心服务" }, { "Plex", "Plex 媒体服务器" }, { "SearchIndexer", "Windows 搜索索引" }, { "Taskmgr", "任务管理器" } };
 
         // 稳定性判断标准
         // 长期（看门狗记录 ≥ 1 小时）
@@ -100,6 +101,9 @@ namespace WatchDog
         Dictionary<string, Trend> analysis = new Dictionary<string, Trend>();
         Dictionary<string, List<HistPt>> histH = new Dictionary<string, List<HistPt>>();   // 各程序句柄数的长期记录（procv2 起才有）
         Dictionary<string, Trend> analysisH = new Dictionary<string, Trend>();
+        Dictionary<string, List<HistPt>> histLong = new Dictionary<string, List<HistPt>>(), histHLong = new Dictionary<string, List<HistPt>>();   // 最多 7 天，每小时一个点（最低值）
+        List<SysRow> sysLong = new List<SysRow>();   // 最多 7 天，每小时一个点（平均值）
+        Dictionary<string, Creep> creep = new Dictionary<string, Creep>();   // 慢性泄漏（7 天记录）
         List<SysRow> sys = new List<SysRow>();
         string histSig = "", rulesSig = "";
         long ignoreSig = -1;
@@ -159,51 +163,199 @@ namespace WatchDog
             return null;
         }
 
+        // 看门狗记录：最近 24 小时用原始数据（10 分钟一个点，画图和 24 小时判断用）；
+        // 最多 7 天按小时汇总（每小时取最低值，看"底线"有没有一直往上抬），用来发现每小时只涨几 MB 的慢性泄漏、画 7 天走势。
+        // 超过 25 小时的旧文件不会再变，按小时汇总后缓存起来，不再重读
+        class FileAgg { public string Sig; public Dictionary<string, List<HistPt>> Mem = new Dictionary<string, List<HistPt>>(), Hnd = new Dictionary<string, List<HistPt>>(); public List<SysRow> Sys = new List<SysRow>(); }
+        Dictionary<string, FileAgg> fileAgg = new Dictionary<string, FileAgg>();
+        const double LongDays = 7;
+
         void LoadHistory()
         {
             if (!Directory.Exists(DataDir)) { hist = new Dictionary<string, List<HistPt>>(); analysis = new Dictionary<string, Trend>(); sys = new List<SysRow>(); return; }
             DirectoryInfo di = new DirectoryInfo(DataDir);
-            // proc-*.csv（旧）和 procv2-*.csv（多了句柄列）：取最近写过的 3 个文件，够覆盖 24 小时
-            FileInfo[] pf = di.GetFiles("proc*.csv").OrderBy(f => f.LastWriteTime).ToArray();
-            pf = pf.Skip(Math.Max(0, pf.Length - 3)).ToArray();
-            FileInfo[] sf = di.GetFiles("sys*.csv").OrderBy(f => f.LastWriteTime).ToArray();
-            sf = sf.Skip(Math.Max(0, sf.Length - 4)).ToArray();
+            DateTime old = DateTime.Now.AddDays(-LongDays - 0.5);
+            // proc-*.csv（旧）/ procv2-*.csv（多了句柄列）；sys / sysv2 / sysv3 / sysv4（每次加列就换个文件名）
+            FileInfo[] pf = di.GetFiles("proc*.csv").Where(f => f.LastWriteTime >= old).OrderBy(f => f.LastWriteTime).ToArray();
+            FileInfo[] sf = di.GetFiles("sys*.csv").Where(f => f.LastWriteTime >= old).OrderBy(f => f.LastWriteTime).ToArray();
             string sig = string.Join("|", pf.Concat(sf).Select(f => f.Name + ":" + f.Length));
             if (sig == histSig) return;   // 文件没变就不重读
             histSig = sig;
-            DateTime cut = DateTime.Now.AddHours(-24);
+            DateTime cut = DateTime.Now.AddHours(-24), recent = DateTime.Now.AddHours(-25);
             Dictionary<string, List<HistPt>> h = new Dictionary<string, List<HistPt>>(), hh = new Dictionary<string, List<HistPt>>();
+            Dictionary<string, List<HistPt>> hl = new Dictionary<string, List<HistPt>>(), hhl = new Dictionary<string, List<HistPt>>();
+            HashSet<string> keep = new HashSet<string>();
             foreach (FileInfo f in pf)
-                foreach (Dictionary<string, string> r in Csv.Read(f.FullName))
+            {
+                string fs = f.Name + ":" + f.Length; keep.Add(f.FullName);
+                FileAgg agg; bool cached = fileAgg.TryGetValue(f.FullName, out agg) && agg.Sig == fs;
+                if (!cached || f.LastWriteTime >= recent)
                 {
-                    DateTime? t = ParseTime(r); string name;
-                    if (t == null || t.Value < cut || !r.TryGetValue("Name", out name)) continue;
-                    List<HistPt> l; if (!h.TryGetValue(name, out l)) { l = new List<HistPt>(); h[name] = l; }
-                    HistPt p = new HistPt(); p.T = t.Value; p.MB = Csv.Num(r, "PrivMB", 0); l.Add(p);
-                    if (!Csv.Has(r, "Handles")) continue;
-                    if (!hh.TryGetValue(name, out l)) { l = new List<HistPt>(); hh[name] = l; }
-                    p = new HistPt(); p.T = t.Value; p.MB = Csv.Num(r, "Handles", 0); l.Add(p);
+                    agg = new FileAgg(); agg.Sig = fs;
+                    foreach (Dictionary<string, string> r in Csv.Read(f.FullName))
+                    {
+                        DateTime? t = ParseTime(r); string name;
+                        if (t == null || !r.TryGetValue("Name", out name)) continue;
+                        double mb = Csv.Num(r, "PrivMB", 0); bool hasH = Csv.Has(r, "Handles"); double hn = Csv.Num(r, "Handles", 0);
+                        AddMin(agg.Mem, name, t.Value, mb);
+                        if (hasH) AddMin(agg.Hnd, name, t.Value, hn);
+                        if (t.Value < cut) continue;
+                        Add(h, name, t.Value, mb);
+                        if (hasH) Add(hh, name, t.Value, hn);
+                    }
+                    if (f.LastWriteTime < recent) fileAgg[f.FullName] = agg;   // 旧文件：只留按小时的汇总
                 }
+                Merge(hl, agg.Mem); Merge(hhl, agg.Hnd);
+            }
+            List<SysRow> s = new List<SysRow>(), sl = new List<SysRow>();
+            foreach (FileInfo f in sf)
+            {
+                string fs = f.Name + ":" + f.Length; keep.Add(f.FullName);
+                FileAgg agg; bool cached = fileAgg.TryGetValue(f.FullName, out agg) && agg.Sig == fs;
+                if (!cached || f.LastWriteTime >= recent)
+                {
+                    agg = new FileAgg(); agg.Sig = fs;
+                    List<SysRow> all = new List<SysRow>();
+                    foreach (Dictionary<string, string> r in Csv.Read(f.FullName))
+                    {
+                        DateTime? t = ParseTime(r);
+                        if (t == null) continue;
+                        SysRow x = new SysRow(); x.T = t.Value;
+                        x.UsedMB = Csv.Num(r, "UsedMB", 0); x.CpuPct = Csv.Num(r, "CpuPct", 0); x.RunMs = Csv.Num(r, "RunMs", 0);
+                        x.HasDisk = Csv.Has(r, "DiskWriteMBs"); x.DiskR = Csv.Num(r, "DiskReadMBs", 0); x.DiskW = Csv.Num(r, "DiskWriteMBs", 0);
+                        x.HasSelf = Csv.Has(r, "SelfPeakMB"); x.SelfCpuSec = Csv.Num(r, "SelfCpuSec", 0); x.SelfPeakMB = Csv.Num(r, "SelfPeakMB", 0);
+                        x.HasKernel = Csv.Has(r, "PoolNonpagedMB"); x.PoolP = Csv.Num(r, "PoolPagedMB", 0); x.PoolN = Csv.Num(r, "PoolNonpagedMB", 0); x.Handles = Csv.Num(r, "Handles", 0);
+                        all.Add(x);
+                        if (x.T >= cut) s.Add(x);
+                    }
+                    agg.Sys = HourlySys(all);
+                    if (f.LastWriteTime < recent) fileAgg[f.FullName] = agg;
+                }
+                sl.AddRange(agg.Sys);
+            }
+            foreach (string k in fileAgg.Keys.ToList()) if (!keep.Contains(k)) fileAgg.Remove(k);
+
             Dictionary<string, Trend> a = new Dictionary<string, Trend>(), ah = new Dictionary<string, Trend>();
             foreach (KeyValuePair<string, List<HistPt>> kv in h) { kv.Value.Sort((x, y) => x.T.CompareTo(y.T)); Trend tr = Analyze(kv.Value); if (tr != null) a[kv.Key] = tr; }
-            foreach (KeyValuePair<string, List<HistPt>> kv in hh) { kv.Value.Sort((x, y) => x.T.CompareTo(y.T)); Trend tr = Analyze(kv.Value); if (tr != null) ah[kv.Key] = tr; }
-            hist = h; analysis = a; histH = hh; analysisH = ah;
-            // sys-*.csv（旧格式）、sysv2（多了磁盘列）、sysv3（多了看门狗自身占用）、sysv4（多了内核内存池和句柄总数）合并，按时间排序
-            List<SysRow> s = new List<SysRow>();
-            foreach (FileInfo f in sf)
-                foreach (Dictionary<string, string> r in Csv.Read(f.FullName))
+            // 句柄：最近 3 / 6 / 12 / 24 小时分别算，取最严重的（刚开始漏的，不会被前面平稳的十几个小时冲淡）
+            foreach (KeyValuePair<string, List<HistPt>> kv in hh) { kv.Value.Sort((x, y) => x.T.CompareTo(y.T)); Trend tr = WorstWindow(kv.Value, HandleLevel); if (tr != null) ah[kv.Key] = tr; }
+            Dictionary<string, Creep> cr = new Dictionary<string, Creep>();
+            foreach (KeyValuePair<string, List<HistPt>> kv in hl)
+            {
+                kv.Value.Sort((x, y) => x.T.CompareTo(y.T));
+                if (kv.Key == "svchost") continue;   // 几十个系统服务的合计，单个服务的泄漏另有 svc: 记录
+                Creep c = AnalyzeCreep(kv.Value); if (c != null) cr[kv.Key] = c;
+            }
+            foreach (List<HistPt> l in hhl.Values) l.Sort((x, y) => x.T.CompareTo(y.T));
+            s.Sort((x, y) => x.T.CompareTo(y.T)); sl.Sort((x, y) => x.T.CompareTo(y.T));
+            hist = h; analysis = a; histH = hh; analysisH = ah; histLong = hl; histHLong = hhl; creep = cr;
+            sys = s; sysLong = sl;
+        }
+        static void Add(Dictionary<string, List<HistPt>> d, string name, DateTime t, double v)
+        {
+            List<HistPt> l; if (!d.TryGetValue(name, out l)) { l = new List<HistPt>(); d[name] = l; }
+            l.Add(new HistPt { T = t, MB = v });
+        }
+        // 按小时取最低值（同一小时只留一个点；文件里的行是按时间顺序写的）
+        static void AddMin(Dictionary<string, List<HistPt>> d, string name, DateTime t, double v)
+        {
+            DateTime hr = new DateTime(t.Year, t.Month, t.Day, t.Hour, 0, 0);
+            List<HistPt> l; if (!d.TryGetValue(name, out l)) { l = new List<HistPt>(); d[name] = l; }
+            HistPt last = l.Count > 0 ? l[l.Count - 1] : null;
+            if (last != null && last.T == hr) { if (v < last.MB) last.MB = v; }
+            else l.Add(new HistPt { T = hr, MB = v });
+        }
+        // 合并各个文件的小时汇总；换文件名那天两个文件可能有同一小时，取最低（复制一份，不改缓存里的点）
+        static void Merge(Dictionary<string, List<HistPt>> into, Dictionary<string, List<HistPt>> from)
+        {
+            foreach (KeyValuePair<string, List<HistPt>> kv in from)
+            {
+                List<HistPt> l; if (!into.TryGetValue(kv.Key, out l)) { l = new List<HistPt>(); into[kv.Key] = l; }
+                foreach (HistPt p in kv.Value)
                 {
-                    DateTime? t = ParseTime(r);
-                    if (t == null || t.Value < cut) continue;
-                    SysRow x = new SysRow(); x.T = t.Value;
-                    x.UsedMB = Csv.Num(r, "UsedMB", 0); x.CpuPct = Csv.Num(r, "CpuPct", 0); x.RunMs = Csv.Num(r, "RunMs", 0);
-                    x.HasDisk = Csv.Has(r, "DiskWriteMBs"); x.DiskR = Csv.Num(r, "DiskReadMBs", 0); x.DiskW = Csv.Num(r, "DiskWriteMBs", 0);
-                    x.HasSelf = Csv.Has(r, "SelfPeakMB"); x.SelfCpuSec = Csv.Num(r, "SelfCpuSec", 0); x.SelfPeakMB = Csv.Num(r, "SelfPeakMB", 0);
-                    x.HasKernel = Csv.Has(r, "PoolNonpagedMB"); x.PoolP = Csv.Num(r, "PoolPagedMB", 0); x.PoolN = Csv.Num(r, "PoolNonpagedMB", 0); x.Handles = Csv.Num(r, "Handles", 0);
-                    s.Add(x);
+                    HistPt same = null;
+                    for (int i = l.Count - 1; i >= 0 && i >= l.Count - 3; i--) if (l[i].T == p.T) { same = l[i]; break; }
+                    if (same != null) { if (p.MB < same.MB) same.MB = p.MB; }
+                    else l.Add(new HistPt { T = p.T, MB = p.MB });
                 }
-            s.Sort((x, y) => x.T.CompareTo(y.T));
-            sys = s;
+            }
+        }
+        // 整机记录按小时取平均
+        static List<SysRow> HourlySys(List<SysRow> all)
+        {
+            List<SysRow> o = new List<SysRow>();
+            foreach (IGrouping<DateTime, SysRow> g in all.GroupBy(x => new DateTime(x.T.Year, x.T.Month, x.T.Day, x.T.Hour, 0, 0)))
+            {
+                SysRow r = new SysRow(); r.T = g.Key.AddMinutes(30);
+                r.UsedMB = g.Average(x => x.UsedMB); r.CpuPct = g.Average(x => x.CpuPct); r.RunMs = g.Average(x => x.RunMs);
+                r.HasDisk = g.Any(x => x.HasDisk); r.DiskR = g.Average(x => x.DiskR); r.DiskW = g.Average(x => x.DiskW);
+                r.HasSelf = g.Any(x => x.HasSelf); r.SelfCpuSec = g.Average(x => x.SelfCpuSec); r.SelfPeakMB = g.Max(x => x.SelfPeakMB);
+                List<SysRow> k = g.Where(x => x.HasKernel).ToList();
+                r.HasKernel = k.Count > 0;
+                if (r.HasKernel) { r.PoolP = k.Average(x => x.PoolP); r.PoolN = k.Average(x => x.PoolN); r.Handles = k.Average(x => x.Handles); }
+                o.Add(r);
+            }
+            return o;
+        }
+
+        // ---------- 慢性泄漏：7 天记录，每小时取最低值 ----------
+        // 真正的泄漏几乎是一条直线（R² 很高），而且"底线"（每 3 小时的最低值）从不回落；
+        // 浏览器、聊天软件这类用得多占得多的程序会有起有落，R² 低、底线会掉下来
+        class Creep { public double Span, Slope, Growth, Rel, R2, Up, First, Last; public int Level; }
+        static Creep AnalyzeCreep(List<HistPt> pts)
+        {
+            int n = pts.Count;
+            if (n < 10) return null;
+            int s = 0;   // 只看最近一次重启之后：骤降 40% 以上或断档超过 3 小时
+            for (int i = 1; i < n; i++) if (pts[i].MB < 0.6 * pts[i - 1].MB || (pts[i].T - pts[i - 1].T).TotalHours > 3) s = i;
+            int m = n - s;
+            if (m < 10) return null;
+            DateTime t0 = pts[s].T;
+            double span = (pts[n - 1].T - t0).TotalHours;
+            if (span < 12) return null;
+            double sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0;
+            for (int i = s; i < n; i++) { double x = (pts[i].T - t0).TotalHours, y = pts[i].MB; sx += x; sy += y; sxx += x * x; sxy += x * y; syy += y * y; }
+            double den = m * sxx - sx * sx, num = m * sxy - sx * sy, vy = m * syy - sy * sy;
+            if (den <= 0) return null;
+            Creep c = new Creep(); c.Span = span; c.Slope = num / den; c.R2 = vy > 0 ? num * num / (den * vy) : 0;
+            c.Growth = c.Slope * span; c.First = pts[s].MB; c.Last = pts[n - 1].MB; c.Rel = c.Growth / Math.Max(20, c.First);
+            // 每 3 小时一段取最低值，看底线往上走的比例（允许 1% 的抖动）
+            List<double> floor = new List<double>(); int cur = -1;
+            for (int i = s; i < n; i++)
+            {
+                int b = (int)((pts[i].T - t0).TotalHours / 3);
+                if (b != cur) { floor.Add(pts[i].MB); cur = b; } else floor[floor.Count - 1] = Math.Min(floor[floor.Count - 1], pts[i].MB);
+            }
+            int up = 0; for (int i = 1; i < floor.Count; i++) if (floor[i] >= floor[i - 1] - Math.Max(1, 0.01 * floor[i - 1])) up++;
+            c.Up = floor.Count > 1 ? up / (double)(floor.Count - 1) : 0;
+            if (c.Span >= 24 && c.R2 >= 0.95 && c.Up >= 0.9 && c.Growth >= 150 && c.Rel >= 0.5) c.Level = 2;
+            else if (c.Growth >= 100 && ((c.R2 >= 0.85 && c.Up >= 0.85) || (c.R2 >= 0.7 && c.Up >= 0.95))) c.Level = 1;
+            else return null;
+            return c;
+        }
+
+        // ---------- 只看最近几个小时：3 / 6 / 12 / 24 小时分别算，取最严重的 ----------
+        static readonly double[] Windows = { 3, 6, 12, 24 };
+        static Trend WorstWindow(List<HistPt> pts, Func<Trend, double, int> level)
+        {
+            if (pts.Count == 0) return null;
+            Trend best = null; int bestL = -1;
+            DateTime end = pts[pts.Count - 1].T;
+            foreach (double w in Windows)
+            {
+                List<HistPt> sub = pts.Where(p => p.T >= end.AddHours(-w)).ToList();
+                Trend t = Analyze(sub);
+                if (t == null) continue;
+                int l = level(t, w);
+                if (l >= bestL) { best = t; bestL = l; }   // 同样严重时取更长的时间段
+            }
+            return best;
+        }
+        // 句柄：短时间段要求更"直"（R² ≥ 0.85）才算，免得正常波动被当成泄漏
+        static int HandleLevel(Trend a, double w)
+        {
+            double r2 = w < 24 ? 0.85 : 0.7, r2b = w < 24 ? 0.85 : 0.6;
+            return a.Slope >= 500 && a.Growth >= 3000 && a.R2 >= r2 ? 2 : a.Slope >= 200 && a.Growth >= 1500 && a.R2 >= r2b ? 1 : 0;
         }
 
         void LoadRules()
@@ -476,6 +628,22 @@ namespace WatchDog
         // 优先用看门狗的长期记录（≥ 1 小时）；没有的话用窗口的实时数据（≥ 10 分钟）给初步判断。
         Rating GetRatingRaw(string name, double mb)
         {
+            Rating r = GetRatingBase(name, mb);
+            if (r.Text == "已知问题" || r.Level >= 2) return r;
+            // 慢性泄漏（7 天记录）比 24 小时 / 实时的判断更严重时，用它
+            Creep c;
+            if (!creep.TryGetValue(name, out c) || c.Level <= Math.Max(0, r.Level) || mb < 0.6 * c.Last) return r;   // 现在比记录低很多 = 刚重启过
+            string span = SpanText(c.Span);
+            string trend = string.Format("{0:+#,0;-#,0;0} MB / {1}", c.Growth, span);
+            string fc = "照这个速度，7 天后约 " + FmtMB(mb + c.Slope * 24 * 7) + (c.Level == 2 ? "；重启它可以释放" : "");
+            if (c.Level == 2)
+                return new Rating("持续泄漏", 2, 88, string.Format("{0}里一直在涨、几乎没回落：{1:N0} → {2:N0} MB（约 {3:N1} MB/小时）", span, c.First, c.Last, c.Slope), fc, trend);
+            return new Rating("缓慢上涨", 1, 58, string.Format("{0}里底线一直在抬高：{1:N0} → {2:N0} MB（约 {3:N1} MB/小时）", span, c.First, c.Last, c.Slope), fc, trend);
+        }
+        static string SpanText(double hours) { return hours >= 48 ? string.Format("{0:N1} 天", hours / 24) : string.Format("{0:N0} 小时", hours); }
+
+        Rating GetRatingBase(string name, double mb)
+        {
             Hit hit;
             if (hitByTarget.TryGetValue(name, out hit))
             {
@@ -494,7 +662,7 @@ namespace WatchDog
                 if (a.Slope >= LeakSlopeMBh && a.Growth >= LeakGrowthMB && a.R2 >= LeakR2) return new Rating("疑似泄漏", 2, 90, note, fc, trend);
                 if (a.Slope >= RiseSlopeMBh && a.Growth >= RiseGrowthMB && a.R2 >= RiseR2) return new Rating("缓慢上涨", 1, 60, note, fc, trend);
                 if (a.Cv >= WobbleCv) return new Rating("波动大", -1, 10, "忽高忽低，通常是正常使用（比如开关网页）", "", trend);
-                return new Rating("稳定", 0, 0, string.Format("近 {0:N1} 小时平稳", a.Span), "", trend);
+                return new Rating("稳定", 0, 0, a.Growth >= 50 ? string.Format("近 {0:N1} 小时涨了 {1:N0} MB，涨得慢，暂不算问题", a.Span, a.Growth) : string.Format("近 {0:N1} 小时平稳", a.Span), "", trend);
             }
             Ring ring; series.TryGetValue(name, out ring);
             double[] st = ring != null ? ring.Stats(GapSec) : null;

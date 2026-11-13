@@ -212,14 +212,17 @@ namespace WatchDog
                 list.Add(NewIssue(h.Rule.Title, h.Why, h.Rule.FixType == "none" ? 1 : 2, h.Target, "rule:" + h.Rule.Id));
                 if (h.Target != null) seen.Add(h.Target);
             }
-            foreach (ProcRow r in all)
+            HashSet<int> seenPid = new HashSet<int>();   // 服务（svc:名字）和它所在的进程是同一个时只报一次
+            foreach (ProcRow r in all.OrderBy(x => x.Name.StartsWith("svc:") ? 0 : 1))
             {
                 if (seen.Contains(r.Name)) continue;
                 Rating rt = ratings[r.Name];
+                if (rt.Level >= 1 && r.Count == 1 && !seenPid.Add(r.Pid)) continue;
                 if (rt.Level < 1) continue;   // 正常的、或已被忽略 / 确认正常的
                 string label = Label(r.Name);
                 if (rt.Text == "疑似泄漏") list.Add(NewIssue(label + " 疑似内存泄漏", rt.Note, 2, r.Name, "prog:" + r.Name));
-                else if (rt.Text == "缓慢上涨") list.Add(NewIssue(label + " 在缓慢上涨", rt.Forecast, 1, r.Name, "prog:" + r.Name));
+                else if (rt.Text == "持续泄漏") list.Add(NewIssue(label + " 一直在慢慢泄漏", rt.Note, 2, r.Name, "prog:" + r.Name));
+                else if (rt.Text == "缓慢上涨") list.Add(NewIssue(label + " 在缓慢上涨", rt.Note, 1, r.Name, "prog:" + r.Name));
                 else if (rt.Text == "短时上涨")
                 {
                     Ring ring; double[] st = series.TryGetValue(r.Name, out ring) ? ring.Stats(GapSec) : null;
@@ -227,14 +230,20 @@ namespace WatchDog
                 }
             }
             if (kernelIssue != null) list.Add(kernelIssue);
-            foreach (Issue ri in resIssues.Values.OrderByDescending(i => i.Level).Take(3))
-                if (!seen.Contains(ri.Target)) { list.Add(ri); seen.Add(ri.Target); }
+            foreach (Issue ri in resIssues.Values.OrderByDescending(i => i.Level).Take(4))
+            {
+                // 这个程序已经报了内存问题：把句柄 / 图形资源的情况并进去，不另起一条
+                Issue same = list.FirstOrDefault(i => i.Target == ri.Target);
+                if (same != null) { same.Sub = ri.Title.Replace(ri.Target, "").Trim().TrimStart('的') + "：" + ri.Sub.Split('·')[0].Trim() + " · " + same.Sub; same.Level = Math.Max(same.Level, ri.Level); }
+                else if (!seen.Contains(ri.Target)) { list.Add(ri); seen.Add(ri.Target); }
+            }
             foreach (ProcRow r in real.Where(x => x.IoMBs >= HeavyIoMBs).OrderByDescending(x => x.IoMBs).Take(2))
             {
                 if (IsIgnored("io:" + r.Name) != null || seen.Contains(r.Name)) continue;
                 list.Add(NewIssue(Label(r.Name) + " 正在大量读写", string.Format("{0:N1} MB/s，长时间这样会拖慢硬盘；如果它不该这么忙，可以重启它", r.IoMBs), 1, r.Name, "io:" + r.Name));
             }
-            list = list.OrderByDescending(i => i.Level).ToList();
+            // 同样严重时：内核问题最先，其次是突发的泄漏（"疑似"），最后是慢慢涨的
+            list = list.OrderByDescending(i => i.Level).ThenBy(i => i.Key == "kernel" ? 0 : i.Title.Contains("疑似") ? 1 : 2).ToList();
             int nBad = list.Count(i => i.Level == 2), nWarn = list.Count(i => i.Level == 1);
             int nLong = analysis.Count, nShort = ratings.Values.Count(x => x.Trend.EndsWith("分钟"));
             string basis = string.Format("已评级 {0} 个程序（长期 {1} · 实时 {2}）· 规则 {3} 条", nLong + nShort, nLong, nShort, rules.Count);
@@ -301,6 +310,13 @@ namespace WatchDog
                 bool ok = RunElevated("Restart-ServiceHard.ps1", "-Name " + svc); ReloadSoon(8); return ok;
             }
             if (Protected.Contains(name)) { Say(name + " 是系统关键进程，不能在这里重启。"); return false; }
+            // 这个程序其实是一个服务（比如 CorsairCpuIdService、ROG Live Service）：按服务重启，直接结束进程会因权限失败，结束了也不会按服务重新启动
+            ProcRow pr; string svcName = rows.TryGetValue(name, out pr) && pr.Count == 1 ? Native.ServiceOfPid(pr.Pid) : null;
+            if (svcName != null)
+            {
+                if (!noAsk && !Ask(string.Format("{0} 是系统服务「{1}」，将重启这个服务（需要管理员权限，会弹出确认窗口）。确定吗？", name, svcName))) return false;
+                bool ok = RunElevated("Restart-ServiceHard.ps1", "-Name \"" + svcName + "\""); ReloadSoon(8); return ok;
+            }
             Process[] procs = ByName(name);
             try
             {
@@ -375,7 +391,7 @@ namespace WatchDog
             foreach (ProcRow r in rows.Values)
             {
                 if (seen.Contains(r.Name) || Protected.Contains(r.Name)) continue;
-                Rating rt; if (ratings.TryGetValue(r.Name, out rt) && rt.Text == "疑似泄漏" && rt.Level >= 2) { todo.Add(new KeyValuePair<string, object>("重启 " + r.Name + "（疑似泄漏）", r.Name)); seen.Add(r.Name); continue; }
+                Rating rt; if (ratings.TryGetValue(r.Name, out rt) && (rt.Text == "疑似泄漏" || rt.Text == "持续泄漏") && rt.Level >= 2) { todo.Add(new KeyValuePair<string, object>("重启 " + r.Name + "（" + rt.Text + "）", r.Name)); seen.Add(r.Name); continue; }
                 if (ResLevel(r.Name) >= 2 && !r.Name.StartsWith("svc:")) { todo.Add(new KeyValuePair<string, object>("重启 " + r.Name + "（句柄 / 图形资源）", r.Name)); seen.Add(r.Name); }
             }
             if (todo.Count == 0) { Say("现在没有需要修复的问题。"); return; }

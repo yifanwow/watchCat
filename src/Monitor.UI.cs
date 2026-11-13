@@ -143,9 +143,9 @@ namespace WatchDog
         static readonly string[][] KernelMetrics = { new[] { "pool", "内存池" }, new[] { "total", "句柄" } };
 
         // 走势图可选的时间范围（小时）。默认近 30 分钟
-        static readonly string[] RangeKeys = { "30m", "1h", "3h", "12h", "24h" };
-        static readonly Dictionary<string, double> RangeHours = new Dictionary<string, double> { { "30m", 0.5 }, { "1h", 1 }, { "3h", 3 }, { "12h", 12 }, { "24h", 24 } };
-        static readonly Dictionary<string, string> RangeLabel = new Dictionary<string, string> { { "30m", "30 分钟" }, { "1h", "1 小时" }, { "3h", "3 小时" }, { "12h", "12 小时" }, { "24h", "24 小时" } };
+        static readonly string[] RangeKeys = { "30m", "1h", "3h", "12h", "24h", "7d" };
+        static readonly Dictionary<string, double> RangeHours = new Dictionary<string, double> { { "30m", 0.5 }, { "1h", 1 }, { "3h", 3 }, { "12h", 12 }, { "24h", 24 }, { "7d", 168 } };
+        static readonly Dictionary<string, string> RangeLabel = new Dictionary<string, string> { { "30m", "30 分钟" }, { "1h", "1 小时" }, { "3h", "3 小时" }, { "12h", "12 小时" }, { "24h", "24 小时" }, { "7d", "7 天" } };
         const int ColCount = 10;
         static readonly int[] RightCols = { 2, 3, 4, 5, 6 };
         static readonly Dictionary<string, int> SortCol = new Dictionary<string, int> { { "mem", 2 }, { "cpu", 3 }, { "io", 4 }, { "hnd", 5 }, { "gui", 6 }, { "issue", 7 } };
@@ -758,8 +758,12 @@ namespace WatchDog
         ChartData GetChartData(string range)
         {
             bool lng = RangeHours[range] > 1;   // 1 小时以内用窗口的实时数据（5 秒一个点），更长用看门狗的记录（10 分钟一个点）
+            bool week = range == "7d";          // 7 天：看门狗记录按小时汇总（每小时一个点）
             ChartData d = new ChartData();
-            const string live = "窗口打开期间每 5 秒一个点", rec = "看门狗每 10 分钟记录一次", inst = "看门狗检查时的瞬间值";
+            const string live = "窗口打开期间每 5 秒一个点";
+            string rec = week ? "看门狗的记录，每小时一个点（程序取这一小时的最低值）" : "看门狗每 10 分钟记录一次", inst = week ? "看门狗的记录，每小时的平均值" : "看门狗检查时的瞬间值";
+            List<SysRow> sys = week ? sysLong : this.sys;
+            Dictionary<string, List<HistPt>> hist = week ? histLong : this.hist, histH = week ? histHLong : this.histH;
             switch (chartMode)
             {
                 case "mem":
@@ -857,7 +861,7 @@ namespace WatchDog
             ChartData data = GetChartData(range);
             Txt(g, "// TREND", fTagB, cAccent, 12, 8, 70, 20);
             // 右上角范围切换：近 30 分钟 / 1 / 3 / 12 / 24 小时
-            int rw = 64, gap = 4;
+            int rw = 58, gap = 4;
             int x = w - 24 - RangeKeys.Length * (rw + gap) + gap;
             Txt(g, "近", fCN, cGray, x - 26, 7, 22, 20, tfR);
             int titleEnd = x - 34;
@@ -925,13 +929,13 @@ namespace WatchDog
                 Txt(g, string.Format(fmt, hi - (hi - lo) * i / 3) + " " + data.Unit, fSmall, cGray, 4, y - 9, L - 10, 18, tfR);
                 if (right) Txt(g, string.Format("{0:N0}%", 100 - 100 * i / 3.0), fSmall, cYellow, L + pw + 6, y - 9, R - 8, 18);
             }
-            int ticks = range == "3h" || range == "12h" ? 6 : 4;
+            int ticks = range == "3h" || range == "12h" ? 6 : range == "7d" ? 7 : 4;
             for (int k = 0; k <= ticks; k++)
             {
                 float tx = L + pw * k / (float)ticks;
                 g.DrawLine(pGrid, tx, T, tx, T + ph);
                 DateTime lt = new DateTime(begin + spanT * k / ticks, DateTimeKind.Utc).ToLocalTime();
-                Txt(g, lt.ToString("HH:mm"), fSmall, cGray, tx - 20, T + ph + 4, 40, 16, tfC);
+                Txt(g, lt.ToString(range == "7d" ? "MM-dd HH:mm" : "HH:mm"), fSmall, cGray, tx - 34, T + ph + 4, 68, 16, tfC);
             }
             g.SetClip(new RectangleF(L, T, pw, ph));
             foreach (Line ln in lines)

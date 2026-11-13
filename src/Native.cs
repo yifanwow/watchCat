@@ -116,6 +116,56 @@ namespace WatchDog
             }
             return null;
         }
+        // 指定进程的句柄按类型计数（注册表键 / 事件 / 线程……）。不需要管理员权限；全系统的句柄表约 40 字节一个，
+        // 30 多万个句柄时要 13 MB，只在发现句柄问题时由后台线程偶尔调用，用完立即释放
+        public static Dictionary<int, Dictionary<string, int>> HandleKinds(HashSet<int> pids)
+        {
+            if (IntPtr.Size != 8) return null;
+            Dictionary<int, string> types = new Dictionary<int, string>();
+            IntPtr tb = Marshal.AllocHGlobal(1 << 20);
+            try
+            {
+                int ret;
+                if (NtQueryObject(IntPtr.Zero, 3, tb, 1 << 20, out ret) != 0) return null;   // ObjectTypesInformation
+                int n = Marshal.ReadInt32(tb); long p = tb.ToInt64() + 8;
+                for (int i = 0; i < n; i++)
+                {
+                    ushort len = (ushort)Marshal.ReadInt16((IntPtr)p), max = (ushort)Marshal.ReadInt16((IntPtr)(p + 2));
+                    string name = Marshal.PtrToStringUni(Marshal.ReadIntPtr((IntPtr)(p + 8)), len / 2);
+                    types[Marshal.ReadByte((IntPtr)(p + 0x5A))] = name;   // TypeIndex
+                    p += 0x68 + ((max + 7) & ~7);
+                }
+            }
+            finally { Marshal.FreeHGlobal(tb); }
+            int size = 16 << 20;
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                IntPtr b = Marshal.AllocHGlobal(size);
+                try
+                {
+                    int ret, st = NtQuerySystemInformation(64, b, size, out ret);   // SystemExtendedHandleInformation
+                    if (st == unchecked((int)0xC0000004)) { size = ret + (4 << 20); continue; }
+                    if (st != 0) return null;
+                    long count = Marshal.ReadInt64(b);
+                    Dictionary<int, Dictionary<string, int>> o = new Dictionary<int, Dictionary<string, int>>();
+                    for (long i = 0; i < count; i++)
+                    {
+                        long e = b.ToInt64() + 16 + i * 40;
+                        int pid = (int)Marshal.ReadInt64((IntPtr)(e + 8));
+                        if (!pids.Contains(pid)) continue;
+                        int ti = (ushort)Marshal.ReadInt16((IntPtr)(e + 30));
+                        string tn; if (!types.TryGetValue(ti, out tn)) tn = "#" + ti;
+                        Dictionary<string, int> d; if (!o.TryGetValue(pid, out d)) { d = new Dictionary<string, int>(); o[pid] = d; }
+                        int c; d.TryGetValue(tn, out c); d[tn] = c + 1;
+                    }
+                    return o;
+                }
+                finally { Marshal.FreeHGlobal(b); }
+            }
+            return null;
+        }
+        [DllImport("ntdll.dll")] static extern int NtQueryObject(IntPtr h, int cls, IntPtr buf, int len, out int ret);
+
         public static string TagText(int tag)
         {
             byte[] bs = BitConverter.GetBytes(tag);
@@ -153,6 +203,37 @@ namespace WatchDog
         }
 
         [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr h);
+
+        // 进程里跑的服务名（只在这个进程只跑一个服务时返回；svchost 这类合住的返回 null）
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct ENUM_SERVICE_STATUS_PROCESS { public IntPtr ServiceName, DisplayName; public SERVICE_STATUS_PROCESS Status; }
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+        static extern bool EnumServicesStatusEx(IntPtr scm, int level, uint type, uint state, IntPtr buf, int size, out int needed, out int count, ref int resume, string group);
+        public static string ServiceOfPid(int pid)
+        {
+            IntPtr scm = OpenSCManager(null, null, 0x0004);   // SC_MANAGER_ENUMERATE_SERVICE
+            if (scm == IntPtr.Zero) return null;
+            IntPtr buf = IntPtr.Zero;
+            try
+            {
+                int need, count, resume = 0;
+                EnumServicesStatusEx(scm, 0, 0x30, 1, IntPtr.Zero, 0, out need, out count, ref resume, null);   // 只看正在运行的 Win32 服务
+                if (need <= 0) return null;
+                buf = Marshal.AllocHGlobal(need); resume = 0;
+                if (!EnumServicesStatusEx(scm, 0, 0x30, 1, buf, need, out need, out count, ref resume, null)) return null;
+                int size = Marshal.SizeOf(typeof(ENUM_SERVICE_STATUS_PROCESS));
+                string found = null;
+                for (int i = 0; i < count; i++)
+                {
+                    ENUM_SERVICE_STATUS_PROCESS e = (ENUM_SERVICE_STATUS_PROCESS)Marshal.PtrToStructure(buf + i * size, typeof(ENUM_SERVICE_STATUS_PROCESS));
+                    if (e.Status.ProcessId != pid) continue;
+                    if (found != null) return null;   // 一个进程里有好几个服务
+                    found = Marshal.PtrToStringUni(e.ServiceName);
+                }
+                return found;
+            }
+            finally { if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf); CloseServiceHandle(scm); }
+        }
 
         public static void Dwm(IntPtr h, int attr, int val) { try { DwmSetWindowAttribute(h, attr, ref val, 4); } catch { } }
     }

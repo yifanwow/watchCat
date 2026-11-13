@@ -80,16 +80,25 @@ namespace WatchDog
         void EvalKernel()
         {
             int lvl = 0; string badge = "正常", why = "", title = null;
-            // 1. 长期（看门狗记录，本次开机以来，至少 3 小时）
+            // 1. 长期（看门狗记录，本次开机以来）。最近 3 / 6 / 12 小时也单独算一遍：
+            //    开机好几天后才开始漏的，放在整段里会被前面平稳的几天冲淡
             DateTime boot = DateTime.Now - TimeSpan.FromMilliseconds(Native.GetTickCount64());
-            List<SysRow> rowsK = sys.Where(x => x.HasKernel && x.T >= boot.AddMinutes(10)).ToList();
-            Trend tn = Analyze(rowsK.Select(x => new HistPt { T = x.T, MB = x.PoolN }).ToList());
-            Trend tp = Analyze(rowsK.Select(x => new HistPt { T = x.T, MB = x.PoolP }).ToList());
-            Func<string, Trend, string> desc = (pool, t) => string.Format("{0} {1:N1} 小时 +{2:N0} MB（约 {3:N0} MB/小时）", pool, t.Span, t.Growth, t.Slope);
-            if (tn != null && tn.Span >= 3 && tn.Slope >= 15 && tn.Growth >= 150 && tn.R2 >= 0.75) { lvl = 2; badge = "疑似泄漏"; title = "内核内存疑似泄漏（驱动）"; why = desc("非分页池", tn); }
-            else if (tp != null && tp.Span >= 3 && tp.Slope >= 40 && tp.Growth >= 400 && tp.R2 >= 0.75) { lvl = 2; badge = "疑似泄漏"; title = "内核内存疑似泄漏（驱动）"; why = desc("分页池", tp); }
-            else if (tn != null && tn.Span >= 3 && tn.Slope >= 6 && tn.Growth >= 80 && tn.R2 >= 0.6) { lvl = 1; badge = "缓慢上涨"; title = "内核内存在缓慢上涨"; why = desc("非分页池", tn); }
-            else if (tp != null && tp.Span >= 3 && tp.Slope >= 15 && tp.Growth >= 200 && tp.R2 >= 0.6) { lvl = 1; badge = "缓慢上涨"; title = "内核内存在缓慢上涨"; why = desc("分页池", tp); }
+            List<SysRow> rowsK = sysLong.Where(x => x.HasKernel && x.T >= boot.AddMinutes(10) && x.T < DateTime.Now.AddHours(-24)).Concat(sys.Where(x => x.HasKernel && x.T >= boot.AddMinutes(10))).ToList();
+            Func<string, Trend, string> desc = (pool, t) => string.Format("{0} {1} +{2:N0} MB（约 {3:N0} MB/小时）", pool, SpanText(t.Span), t.Growth, t.Slope);
+            DateTime last = rowsK.Count > 0 ? rowsK[rowsK.Count - 1].T : DateTime.Now;
+            foreach (double w in new double[] { 1e6, 12, 6, 3 })   // 先看整段，再看最近的
+            {
+                List<SysRow> sub = rowsK.Where(x => x.T >= last.AddHours(-w)).ToList();
+                Trend tn = Analyze(sub.Select(x => new HistPt { T = x.T, MB = x.PoolN }).ToList());
+                Trend tp = Analyze(sub.Select(x => new HistPt { T = x.T, MB = x.PoolP }).ToList());
+                double r2 = w < 1e5 ? 0.85 : 0.75, r2b = w < 1e5 ? 0.85 : 0.6, minSpan = Math.Min(3, w * 0.8);   // 只看最近几小时时要求更"直"
+                int l = 0; string t2 = null, b2 = null, y2 = null;
+                if (tn != null && tn.Span >= minSpan && tn.Slope >= 15 && tn.Growth >= 150 && tn.R2 >= r2) { l = 2; b2 = "疑似泄漏"; t2 = "内核内存疑似泄漏（驱动）"; y2 = desc("非分页池", tn); }
+                else if (tp != null && tp.Span >= minSpan && tp.Slope >= 40 && tp.Growth >= 400 && tp.R2 >= r2) { l = 2; b2 = "疑似泄漏"; t2 = "内核内存疑似泄漏（驱动）"; y2 = desc("分页池", tp); }
+                else if (tn != null && tn.Span >= minSpan && tn.Slope >= 6 && tn.Growth >= 80 && tn.R2 >= r2b) { l = 1; b2 = "缓慢上涨"; t2 = "内核内存在缓慢上涨"; y2 = desc("非分页池", tn); }
+                else if (tp != null && tp.Span >= minSpan && tp.Slope >= 15 && tp.Growth >= 200 && tp.R2 >= r2b) { l = 1; b2 = "缓慢上涨"; t2 = "内核内存在缓慢上涨"; y2 = desc("分页池", tp); }
+                if (l > lvl) { lvl = l; badge = b2; title = t2; why = y2; }
+            }
             // 2. 实时（窗口的数据，至少 30 分钟）：只说"在涨，观察中"
             if (lvl == 0)
             {
@@ -109,11 +118,19 @@ namespace WatchDog
             if (title != null && IsIgnored("kernel") == null)
             {
                 TagStat top = poolGrow.FirstOrDefault();
-                string sub = why + (top != null ? " · 涨最多：" + top.Name : "");
+                string with = KernelSuspects();
+                string sub = why + (with.Length > 0 ? " · 同时在漏句柄：" + with : top != null ? " · 涨最多：" + top.Name : "");
                 kernelIssue = NewIssue(title, sub, lvl, null, "kernel");
                 // 找出涨得最多的标签属于哪个驱动（后台线程，只搜一次）
                 foreach (TagStat t in poolGrow.Take(2)) if (TagDesc(t.Name) == null) FindDriver(t.Tag);
             }
+        }
+        // 同时在漏句柄的程序（句柄占内核内存，内核内存涨往往就是它们引起的）
+        string KernelSuspects()
+        {
+            ProcRow r;   // 按单个进程的句柄数排，漏得最多的在前
+            return string.Join("、", resIssues.Values.Where(i => i.Title.Contains("句柄")).OrderByDescending(i => i.Level)
+                .ThenByDescending(i => rows.TryGetValue(i.Target, out r) ? r.HMax : 0).Select(i => i.Target).Take(3));
         }
         double[] Stats(string key) { Ring r; return series.TryGetValue(key, out r) ? r.Stats(GapSec) : null; }
 
@@ -126,7 +143,8 @@ namespace WatchDog
                 if (IsIgnored("res:" + r.Name) != null) continue;
                 int lvl = 0; string title = null, sub = null; string label = r.Name;   // 标题只用程序名，说明太长会被截断
                 string gui = string.Format("GDI {0:N0} · USER {1:N0}", r.Gdi, r.User);
-                string fix = Protected.Contains(r.Name) ? "通常是驱动引起的，重启电脑可以收回" : "重启它可以释放";
+                string fix = r.Name == "svchost" ? "这是几十个系统服务的合计，重启电脑可以收回"
+                    : Protected.Contains(r.Name) ? "系统关键进程，通常是驱动引起的，重启电脑可以收回" : "重启它可以释放";
                 // GDI / USER：单个进程上限 1 万个
                 if (r.GuiMax >= GuiWarn)
                 {
@@ -154,10 +172,56 @@ namespace WatchDog
                 // 句柄：绝对值
                 int ah = r.HMax >= HndBad ? 2 : r.HMax >= HndWarn ? 1 : 0;
                 if (ah > lvl) { lvl = ah; title = label + " 的句柄数异常多"; sub = string.Format("单个进程 {0:N0} 个，正常程序一般在几千以内 · {1}", r.HMax, fix); }
+                // 漏的是哪类句柄（后台每 10 分钟查一次），放在说明最前面：比如"注册表键"多半是反复打开注册表不关
+                string kinds;
+                if (lvl > 0 && title.Contains("句柄") && handleKinds.TryGetValue(r.Name, out kinds)) sub = "主要是" + kinds + " · " + sub;
                 if (lvl > 0) res[r.Name] = NewIssue(title, sub, lvl, r.Name, "res:" + r.Name);
             }
             resIssues = res;
+            List<string> leaky = res.Values.Where(i => i.Title.Contains("句柄")).Select(i => i.Target).ToList();
+            if (leaky.Count > 0 && (DateTime.UtcNow - lastKinds).TotalMinutes >= 10) StartHandleKinds(leaky);
         }
+        // ---------- 漏的是哪类句柄 ----------
+        Dictionary<string, string> handleKinds = new Dictionary<string, string>();   // 程序名 -> "注册表键 66,890 个、事件 288 个"
+        DateTime lastKinds = DateTime.MinValue;
+        int kindsBusy;
+        static readonly Dictionary<string, string> KindName = new Dictionary<string, string> {
+            { "Key", "注册表键" }, { "Event", "事件" }, { "Thread", "线程" }, { "Process", "进程" }, { "File", "文件" }, { "Section", "共享内存" },
+            { "Desktop", "桌面" }, { "Token", "令牌" }, { "Semaphore", "信号量" }, { "Mutant", "互斥锁" }, { "EtwRegistration", "事件跟踪注册" },
+            { "WaitCompletionPacket", "等待包" }, { "ALPC Port", "通信端口" }, { "Timer", "计时器" }, { "IRTimer", "计时器" }, { "WindowStation", "窗口站" },
+            { "IoCompletion", "完成端口" }, { "Directory", "对象目录" }, { "SymbolicLink", "符号链接" }, { "TpWorkerFactory", "线程池" } };
+        void StartHandleKinds(List<string> names)
+        {
+            if (System.Threading.Interlocked.CompareExchange(ref kindsBusy, 1, 0) != 0) return;
+            lastKinds = DateTime.UtcNow;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    Dictionary<int, string> pidName = new Dictionary<int, string>();
+                    foreach (string n in names)
+                        foreach (Process p in ByName(n)) { pidName[p.Id] = n; p.Dispose(); }
+                    Dictionary<int, Dictionary<string, int>> byPid = Native.HandleKinds(new HashSet<int>(pidName.Keys));
+                    if (byPid == null) return;
+                    Dictionary<string, string> o = new Dictionary<string, string>();
+                    foreach (string n in names)
+                    {
+                        Dictionary<string, int> sum = new Dictionary<string, int>();
+                        foreach (KeyValuePair<int, Dictionary<string, int>> kv in byPid)
+                            if (pidName[kv.Key] == n) foreach (KeyValuePair<string, int> t in kv.Value) { int c; sum.TryGetValue(t.Key, out c); sum[t.Key] = c + t.Value; }
+                        int total = sum.Values.Sum();
+                        if (total == 0) continue;
+                        // 占一成以上的类型才列出来，最多 2 种
+                        o[n] = string.Join("、", sum.Where(t => t.Value >= total / 10).OrderByDescending(t => t.Value).Take(2)
+                            .Select(t => string.Format("{0} {1:N0} 个", KindName.ContainsKey(t.Key) ? KindName[t.Key] : t.Key, t.Value)));
+                    }
+                    handleKinds = o;   // 整体替换，界面线程读到的总是完整的一份
+                }
+                catch { }
+                finally { System.Threading.Interlocked.Exchange(ref kindsBusy, 0); }
+            });
+        }
+
         int ResLevel(string name) { Issue i; return resIssues.TryGetValue(name, out i) ? i.Level : 0; }
 
         // 每个程序的句柄 / GDI / USER 实时数据：句柄最多的 15 个、图形资源最多的 15 个、有问题的、选中的
