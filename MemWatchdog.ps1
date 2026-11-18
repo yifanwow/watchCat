@@ -18,16 +18,18 @@ function Log($msg) {
 }
 function PrivMB($procs) { [int](($procs | Measure-Object PrivateMemorySize64 -Sum).Sum / 1MB) }
 
+# rules.local.json can override a shared rule by using the same id (the WatchDog window's rule editor writes it
+# that way: changed limit / idle time / auto on-off), and "disabled": true turns a rule off.
 function Load-Rules {
-    $all = @()
+    $byId = [ordered]@{}; $n = 0
     foreach ($f in 'rules.json', 'rules.local.json') {
         $p = Join-Path $PSScriptRoot $f
         if (-not (Test-Path $p)) { continue }
         # PowerShell 5.1 returns a JSON array as ONE object; foreach unrolls it into single rules
-        try { foreach ($r in (ConvertFrom-Json (Get-Content $p -Raw -Encoding UTF8))) { $all += $r } }
+        try { foreach ($r in (ConvertFrom-Json (Get-Content $p -Raw -Encoding UTF8))) { $k = if ($r.id) { [string]$r.id } else { "#" + ($n++) }; $byId[$k] = $r } }
         catch { Log ("RULES ERROR in {0}: {1}" -f $f, $_.Exception.Message) }
     }
-    $all
+    @($byId.Values | Where-Object { -not $_.disabled })
 }
 
 # ignore.json (written by the WatchDog window): problems the user chose to ignore for 24 h or confirmed as normal.
@@ -131,22 +133,31 @@ function Test-SteamGame($notGames) {
 #   soft      : a missing log update is only a warning (e.g. a static lighting effect writes no frames)
 # If something is missing after "withinSec", it is recovered once (service started again / program started again
 # with its usual arguments) and checked again.
-function Test-FileSince($path, $texts, $since) {
-    $f = if (Test-Path -LiteralPath $path -PathType Container) { Get-ChildItem -LiteralPath $path -File | Sort-Object LastWriteTime | Select-Object -Last 1 } else { Get-Item -LiteralPath $path -ErrorAction SilentlyContinue }
+function Get-LogFile($path) {
+    if (Test-Path -LiteralPath $path -PathType Container) { Get-ChildItem -LiteralPath $path -File | Sort-Object LastWriteTime | Select-Object -Last 1 }
+    else { Get-Item -LiteralPath $path -ErrorAction SilentlyContinue }
+}
+# Only what was written AFTER the restart counts: $mark = the log file's name and length just before the restart
+function Test-FileSince($path, $texts, $since, $mark) {
+    $f = Get-LogFile $path
     if (-not $f -or $f.LastWriteTime -lt $since) { return $false }
     if (-not $texts) { return $true }
-    $tail = Get-Content -LiteralPath $f.FullName -Tail 400 -ErrorAction SilentlyContinue
-    foreach ($t in $texts) { if ($tail | Select-String -SimpleMatch $t -Quiet) { return $true } }
+    $start = if ($mark -and $mark.Name -eq $f.FullName -and $f.Length -ge $mark.Length) { $mark.Length } else { 0 }
+    try {
+        $fs = [IO.File]::Open($f.FullName, 'Open', 'Read', 'ReadWrite')
+        try { [void]$fs.Seek($start, 'Begin'); $new = (New-Object IO.StreamReader($fs)).ReadToEnd() } finally { $fs.Dispose() }
+    } catch { return $false }
+    foreach ($t in $texts) { if ($new.Contains($t)) { return $true } }
     $false
 }
-function Get-VerifyState($r, $t0) {
+function Get-VerifyState($r, $t0, $mark) {
     $v = $r.verify; $miss = @()
     foreach ($n in @($v.running)) { if ($n -and -not (Get-Process -Name $n -ErrorAction SilentlyContinue)) { $miss += $n } }
     $svcDown = $r.fix.type -eq 'restartService' -and (Get-Service -Name $r.fix.service -ErrorAction SilentlyContinue).Status -ne 'Running'
-    $fileOk = (-not $v.file) -or (Test-FileSince $v.file @($v.text) $t0)
+    $fileOk = (-not $v.file) -or (Test-FileSince $v.file @($v.text) $t0 $mark)
     [pscustomobject]@{ Missing = $miss; SvcDown = $svcDown; FileOk = $fileOk }
 }
-function Confirm-Fix($r, $t0, $paths) {
+function Confirm-Fix($r, $t0, $paths, $mark) {
     $v = $r.verify
     if (-not $v -and $r.fix.type -ne 'restartService') { return 'no check defined' }
     if (-not $v) { $v = [pscustomobject]@{}; $r | Add-Member -NotePropertyName verify -NotePropertyValue $v -Force }
@@ -154,7 +165,7 @@ function Confirm-Fix($r, $t0, $paths) {
     for ($round = 1; $round -le 2; $round++) {
         $deadline = (Get-Date).AddSeconds($within)
         do {
-            $st = Get-VerifyState $r $t0
+            $st = Get-VerifyState $r $t0 $mark
             if (-not $st.Missing -and -not $st.SvcDown -and $st.FileOk) { return $(if ($round -eq 1) { 'checked: all back to normal' } else { 'checked: back to normal after one recovery' }) }
             Start-Sleep -Seconds 5
         } while ((Get-Date) -lt $deadline)
@@ -196,10 +207,11 @@ foreach ($r in $rules) {
     $paths = @{}
     foreach ($n in @($r.verify.running) + @($r.when.process)) { if ($n -and $n -notlike 'svc:*') { $pp = (Get-Process -Name $n -ErrorAction SilentlyContinue | Where-Object Path | Select-Object -First 1).Path; if ($pp) { $paths[$n] = $pp } } }
     $before = if ($r.when.process) { Get-TargetMB $r.when.process } else { $null }
+    $mark = $null; if ($r.verify.file) { $lf = Get-LogFile $r.verify.file; if ($lf) { $mark = [pscustomobject]@{ Name = $lf.FullName; Length = $lf.Length } } }
     $t0 = Get-Date
     try {
         Invoke-Fix $r; $fixedTargets[$r.target] = 1
-        $check = Confirm-Fix $r $t0 $paths
+        $check = Confirm-Fix $r $t0 $paths $mark
         $after = if ($r.when.process) { Get-TargetMB $r.when.process } else { $null }
         $b1 = if ($null -ne $before) { $before } else { '?' }; $a1 = if ($null -ne $after) { $after } else { '?' }
         Log ("DONE {0}: {1} MB -> {2} MB, {3}" -f $r.id, $b1, $a1, $check)

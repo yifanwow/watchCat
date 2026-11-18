@@ -265,8 +265,9 @@ namespace WatchDog
         string Label(string name) { string d = DescOf(name); return d != null ? name + "（" + d + "）" : name; }
 
         // ---------- 操作 ----------
-        bool Ask(string msg) { return MessageBox.Show(this, msg, "WATCHDOG", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes; }
-        void Say(string msg) { MessageBox.Show(this, msg, "WATCHDOG", MessageBoxButtons.OK, MessageBoxIcon.Information); }
+        // 确认 / 提示：和主界面同风格的小窗口（Monitor.Windows.cs），不用系统弹窗
+        bool Ask(string msg) { return CyberDialog("请确认", msg, true, "确定", "取消", null, true); }
+        void Say(string msg) { CyberDialog("提示", msg, false, "知道了", null, null, false); }
         static void StartShell(string file, string args)
         {
             try { Process.Start(new ProcessStartInfo(file, args) { UseShellExecute = true }).Dispose(); } catch { }
@@ -447,9 +448,8 @@ namespace WatchDog
             ProcRow r; double cur = rows.TryGetValue(name, out r) ? r.PrivMB : 0;
             int def = (int)(Math.Ceiling(Math.Max(cur * 1.5, cur + 300) / 100) * 100);
             string what = auto ? "自动重启它" : "提醒你";
-            string ans = Microsoft.VisualBasic.Interaction.InputBox(
-                string.Format("让看门狗监控 {0}（现在 {1:N0} MB）。\n\n内存超过多少 MB 时{2}？\n\n看门狗每 10 分钟检查一次，也会专门记录它的内存走势。", name, cur, what),
-                "WATCHDOG · 监控这个程序", def.ToString());
+            string ans = Prompt("监控这个程序",
+                string.Format("让看门狗监控 {0}（现在 {1:N0} MB）。\n\n内存超过多少 MB 时{2}？\n\n看门狗每 10 分钟检查一次，也会专门记录它的内存走势。", name, cur, what), def.ToString());
             if (string.IsNullOrEmpty(ans)) return;
             int limit;
             if (!int.TryParse(ans.Trim(), out limit) || limit <= 0) { Say("请输入一个正整数（单位 MB）。"); return; }
@@ -494,13 +494,6 @@ namespace WatchDog
             Issue ri; if (resIssues.TryGetValue(name, out ri)) return new[] { ri.Key, ri.Title };
             ProcRow r; if (rows.TryGetValue(name, out r) && r.IoMBs >= HeavyIoMBs && IsIgnored("io:" + name) == null) return new[] { "io:" + name, name + " 正在大量读写" };
             return null;
-        }
-        void ShowIgnored()
-        {
-            List<IgnoreEntry> list = ActiveIgnores();
-            if (list.Count == 0) { Say("现在没有被忽略或确认正常的问题。"); return; }
-            string lines = string.Join("\n", list.Select(i => string.Format("  · {0}（{1}）", i.Label, i.Type == "normal" ? "已确认正常" : "忽略到 " + UntilOf(i).ToString("MM-dd HH:mm"))));
-            if (Ask("下面这些问题现在不会提醒：\n\n" + lines + "\n\n要全部恢复提醒吗？")) { ignores.Clear(); SaveIgnores(); RefreshAll(); }
         }
     }
 }

@@ -140,7 +140,7 @@ namespace WatchDog
             }
             if (e.Y >= AvY && e.Y < AvY + 26 && e.X > AvX + AvS)
             {
-                string ans = Microsoft.VisualBasic.Interaction.InputBox("显示的名称：", "WATCHDOG // 当前用户", userName);
+                string ans = Prompt("当前用户", "显示的名称：", userName);
                 if (string.IsNullOrWhiteSpace(ans)) return;
                 userName = ans.Trim().Length > 24 ? ans.Trim().Substring(0, 24) : ans.Trim();
                 Dictionary<string, object> d = new Dictionary<string, object>(); d["name"] = userName;

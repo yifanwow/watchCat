@@ -58,10 +58,10 @@
     "title": "华硕 Aura 灯效服务泄漏",
     "target": "svc:LightingService",
     "when": { "process": "svc:LightingService", "minMB": 400 },
-    "cause": "华硕 Aura 灯效服务在用软件逐帧计算灯光动画时一直慢慢涨（约 5 MB/小时）。重启后它会读回上次的灯效脚本，动画接着跑；把内存条灯效改成静态或硬件自带效果可以从根上避开。",
-    "fix": { "type": "restartService", "service": "LightingService", "label": "重启 Aura 灯效服务（灯效会闪一下）" },
+    "cause": "华硕 Aura 灯效服务在用软件逐帧计算灯光动画时一直慢慢涨（约 5 MB/小时）。灯效服务重启后只记得模式、不记得脚本，所以接着重启奥创中心服务，让它把你的灯效重新下发，并确认灯效服务收到了。把内存条灯效改成静态或硬件自带效果可以从根上避开。",
+    "fix": { "type": "script", "script": "Restart-Aura.ps1", "label": "重启 Aura 灯效服务并恢复原来的灯效（灯会闪一下）" },
     "idleMin": 10,
-    "verify": { "file": "C:\\ProgramData\\ASUS\\ARMOURY CRATE Diagnosis\\OptionHAL\\EneHal.log", "soft": true, "withinSec": 120 },
+    "verify": { "running": ["LightingService"], "file": "C:\\ProgramData\\ASUS\\ARMOURY CRATE Diagnosis\\LightingService\\LightingService.log", "text": ["put_SetScript] Out"], "withinSec": 150 },
     "auto": true
   },
   {

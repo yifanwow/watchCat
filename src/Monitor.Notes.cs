@@ -46,12 +46,12 @@ namespace WatchDog
             if (name == null) return;
             string cur; notes.TryGetValue(name, out cur);
             string def; Desc.TryGetValue(name, out def);
-            string ans = Microsoft.VisualBasic.Interaction.InputBox(
+            string ans = Prompt("备注",
                 "给「" + name + "」写一句备注（会显示在\"说明\"列里）。\n\n" + (def != null ? "默认说明：" + def + "\n" : "") + "留空并确定 = 删除备注，恢复默认说明。",
-                "WATCHDOG // 备注", cur ?? def ?? "");
-            if (ans == null) return;
+                cur ?? def ?? "");
+            if (ans == null) return;   // 点了取消
             ans = ans.Trim();
-            if (ans.Length == 0 && cur == null) return;   // 取消（InputBox 取消时也返回空）
+            if (ans.Length == 0 && cur == null) return;
             if (ans.Length == 0 || ans == def) notes.Remove(name); else notes[name] = ans.Length > 60 ? ans.Substring(0, 60) : ans;
             SaveNotes();
             RefreshAll();

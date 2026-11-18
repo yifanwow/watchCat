@@ -24,7 +24,8 @@ namespace WatchDog
     {
         public Dictionary<string, object> Raw;
         public string Id, Title, Target, Cause, Process, File, FixType, FixLabel, FixService, FixScript;
-        public double MinMB, MinFileMB; public bool Auto;
+        public double MinMB, MinFileMB, IdleMin; public bool Auto, Disabled, SkipIfGame;
+        public string Source = "公共";   // 公共 = rules.json；我的 = rules.local.json；改过 = 我的设置覆盖了同 id 的公共规则
         public static Rule From(Dictionary<string, object> d)
         {
             Rule r = new Rule(); r.Raw = d;
@@ -34,7 +35,8 @@ namespace WatchDog
             r.MinMB = Json.Num(w, "minMB"); r.MinFileMB = Json.Num(w, "minFileMB");
             r.FixType = Json.Str(f, "type") ?? "none"; r.FixLabel = Json.Str(f, "label") ?? "";
             r.FixService = Json.Str(f, "service"); r.FixScript = Json.Str(f, "script");
-            r.Auto = Json.Bool(d, "auto");
+            r.Auto = Json.Bool(d, "auto"); r.Disabled = Json.Bool(d, "disabled"); r.SkipIfGame = Json.Bool(d, "skipIfGame");
+            r.IdleMin = Json.Num(d, "idleMin");
             r.Target = Json.Str(d, "target") ?? r.Process;
             return r;
         }
@@ -112,7 +114,9 @@ namespace WatchDog
         Dictionary<int, string> svcPid = new Dictionary<int, string>();
         bool taskInstalled;
         string lastAction = "";
-        List<Rule> rules = new List<Rule>();
+        List<Rule> rules = new List<Rule>();             // 生效的规则（关掉的不算）
+        List<Rule> allRules = new List<Rule>();          // 规则窗口里显示的：全部，含关掉的
+        Dictionary<string, Rule> sharedRules = new Dictionary<string, Rule>();   // rules.json 里的原样（"恢复默认"用）
         Dictionary<string, Rule> watched = new Dictionary<string, Rule>();
         Dictionary<string, double?> fileMB = new Dictionary<string, double?>();
         List<Hit> hits = new List<Hit>();
@@ -366,9 +370,28 @@ namespace WatchDog
             string sig = string.Join("|", files.Select(p => Path.GetFileName(p) + ":" + File.GetLastWriteTimeUtc(p).Ticks));
             if (sig == rulesSig) return;
             rulesSig = sig;
-            List<Rule> all = new List<Rule>();
+            // rules.local.json 里同 id 的规则覆盖公共规则（规则窗口里改上限 / 空闲时间 / 开关就是这样存的）；disabled = 关掉
+            List<Rule> ordered = new List<Rule>(); Dictionary<string, Rule> byId = new Dictionary<string, Rule>();
+            Dictionary<string, Rule> shared = new Dictionary<string, Rule>();
             foreach (string p in files)
-                try { foreach (Dictionary<string, object> d in Json.Objects(Json.Parse(Json.ReadFile(p)))) all.Add(Rule.From(d)); } catch { }
+            {
+                bool local = Path.GetFileName(p) == "rules.local.json";
+                try
+                {
+                    foreach (Dictionary<string, object> d in Json.Objects(Json.Parse(Json.ReadFile(p))))
+                    {
+                        Rule r = Rule.From(d);
+                        Rule old;
+                        if (r.Id.Length > 0 && byId.TryGetValue(r.Id, out old)) { r.Source = local ? "改过" : old.Source; ordered[ordered.IndexOf(old)] = r; }
+                        else { r.Source = local ? "我的" : "公共"; ordered.Add(r); }
+                        if (r.Id.Length > 0) byId[r.Id] = r;
+                        if (!local && r.Id.Length > 0) shared[r.Id] = r;
+                    }
+                }
+                catch { }
+            }
+            allRules = ordered; sharedRules = shared;
+            List<Rule> all = ordered.Where(r => !r.Disabled).ToList();
             rules = all;
             Dictionary<string, Rule> w = new Dictionary<string, Rule>();
             foreach (Rule r in all) if (r.Id.StartsWith("watch-") && r.Process != null) w[r.Process] = r;

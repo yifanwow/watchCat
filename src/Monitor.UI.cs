@@ -1035,8 +1035,8 @@ namespace WatchDog
             {
                 if (Ask("将停止并重建 NVIDIA 的 nvtopps 数据库，屏幕可能闪一下。需要管理员权限。确定吗？")) { RunTool("Fix-NvTopps.ps1", ""); ReloadSoon(8); }
             }, false); ay += step;
-            NewBtn(actions, "编辑我的规则", ax, ay, half, delegate { EditRules(); }, false);
-            btnIgnored = NewBtn(actions, "已忽略的问题", ax + half + 8, ay, half, delegate { ShowIgnored(); }, false); ay += step;
+            NewBtn(actions, "规则（查看 / 修改）", ax, ay, half, delegate { ShowRulesWindow(); }, false);
+            btnIgnored = NewBtn(actions, "已忽略的问题", ax + half + 8, ay, half, delegate { ShowIgnoredWindow(); }, false); ay += step;
             btnInstall = NewBtn(actions, "安装看门狗", ax, ay, half, delegate
             {
                 if (taskInstalled) { if (Ask("将删除看门狗计划任务，之后不再自动检查。确定吗？")) RunTool("Install-Watchdog.ps1", "-Uninstall"); }
@@ -1044,7 +1044,7 @@ namespace WatchDog
                 ReloadSoon(15);
             }, false);
             NewBtn(actions, "打开工具文件夹", ax + half + 8, ay, half, delegate { StartShell("explorer.exe", "\"" + ToolDir + "\""); }, false); ay += step;
-            NewBtn(actions, "自动修复记录", ax, ay, half, delegate { ShowFixLog(); }, false);
+            NewBtn(actions, "自动修复记录", ax, ay, half, delegate { ShowFixLogWindow(); }, false);
             NewBtn(actions, "现场记录和报告", ax + half + 8, ay, half, delegate
             {
                 string dir = Path.Combine(DataDir, "incidents");
@@ -1069,20 +1069,6 @@ namespace WatchDog
         {
             string f; if (name != null && incidents.TryGetValue(name, out f) && File.Exists(f)) StartShell("notepad.exe", "\"" + f + "\"");
             else Say("这个程序还没有分析报告或句柄现场记录。点\"分析内存泄漏\"或\"记录句柄现场\"生成一份。");
-        }
-        // 看门狗最近的自动修复：重启前后的内存、重启后的状态核对
-        void ShowFixLog()
-        {
-            List<string> lines = new List<string>();
-            try
-            {
-                if (File.Exists(LogFile))
-                    foreach (string l in File.ReadAllLines(LogFile, System.Text.Encoding.UTF8))
-                        if (System.Text.RegularExpressions.Regex.IsMatch(l, " (FIX|DONE|CAPTURE|ANALYZE) ")) lines.Add(l);
-            }
-            catch { }
-            if (lines.Count == 0) { Say("还没有自动修复的记录。\n\n看门狗只在你空闲 10 分钟以上时重启出问题的程序，重启后会核对状态（服务在运行、相关程序都在、日志恢复写入），不对会补救一次。"); return; }
-            Say("最近的自动修复（DONE 一行是重启前 → 后的内存和状态核对结果）：\n\n" + string.Join("\n", lines.Skip(Math.Max(0, lines.Count - 14))));
         }
         void LayoutDetailButtons()
         {
