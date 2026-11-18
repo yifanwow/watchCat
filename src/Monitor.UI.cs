@@ -125,7 +125,7 @@ namespace WatchDog
         ImageList rowH;
         ContextMenuStrip menu, trayMenu;
         ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote, menuCapture, menuIncident, menuAnalyze;
-        Button btnPrimary, btnKill, btnOpen, btnInstall, btnIgnored;
+        Button btnPrimary, btnKill, btnOpen, btnInstall, btnIgnored, btnAnalyze, btnCapture, btnReport;
         NotifyIcon tray;
         Timer timer, showTimer;
         Icon formIcon;
@@ -201,7 +201,7 @@ namespace WatchDog
             detail = new BufferedPanel(); detail.Dock = DockStyle.Fill;
             detail.Paint += PaintDetail;
             detail.Resize += delegate { LayoutDetailButtons(); };
-            actions = new BufferedPanel(); actions.Dock = DockStyle.Bottom; actions.Height = 178;
+            actions = new BufferedPanel(); actions.Dock = DockStyle.Bottom; actions.Height = 212;
             actions.Paint += delegate(object s, PaintEventArgs e) { Frame(e.Graphics, actions.Width, actions.Height, "ACTIONS", "操作", false); };
             side.Controls.Add(detail);
             side.Controls.Add(Spacer(10));
@@ -457,7 +457,7 @@ namespace WatchDog
             int y = vy + 48; List<object[]> rects = new List<object[]>();
             foreach (Issue it in issues)
             {
-                if (y + 36 > h - 6) { Txt(g, "…还有更多，见左侧列表（按\"稳定性\"排在最前）", fCN, cGray, 30, y, w - 44, 18); break; }
+                if (y + 36 > h - 24) { Txt(g, "…还有更多，见左侧列表（按\"稳定性\"排在最前）", fCN, cGray, 30, y, w - 44, 18); break; }
                 Color c = LevelColor(it.Level);
                 Txt(g, "▲", fCN, c, 14, y, 14, 18);
                 int tw = w - 44;
@@ -598,19 +598,19 @@ namespace WatchDog
             if (hitByTarget.TryGetValue(name, out hit))
             {
                 Txt(g, "已知问题：" + hit.Rule.Title, fCNb, LevelColor(rt.Level), 14, 144, w - 28, 18);
-                Txt(g, hit.Why + "。" + hit.Rule.Cause, fCN, cGray, 14, 164, w - 28, Math.Max(18, h - 48 - 164), tfW);
+                Txt(g, hit.Why + "。" + hit.Rule.Cause, fCN, cGray, 14, 164, w - 28, Math.Max(18, h - 82 - 164), tfW);
             }
             else if (ri != null)
             {
                 // 句柄 / 图形资源问题
                 Txt(g, ShortTitle(ri, name), fCNb, LevelColor(ri.Level), 14, 144, w - 28, 18);
                 // 空间够才显示说明（够两行就折行），不然会压到下面的按钮；体检结论里有完整说明
-                int room = h - 50 - 164;
+                int room = h - 84 - 164;
                 if (room >= 18) Txt(g, ri.Sub, fCN, cGray, 14, 164, w - 28, room >= 60 ? 36 : 18, room >= 60 ? tfW : tfL);
             }
             else if (rt.Forecast.Length > 0) Txt(g, rt.Forecast, fCNb, LevelColor(rt.Level), 14, 144, w - 28, 18);
             // 剩下的空间：近 30 分钟的小走势 + 统计
-            int top = hit != null ? 200 : ri != null ? (h - 50 - 164 >= 60 ? 204 : 186) : rt.Forecast.Length > 0 ? 170 : 148, bottom = h - 50;
+            int top = hit != null ? 200 : ri != null ? (h - 84 - 164 >= 60 ? 204 : 186) : rt.Forecast.Length > 0 ? 170 : 148, bottom = h - 84;
             if (bottom - top >= 40) PaintMini(g, name, 14, top, w - 28, bottom - top);
         }
         void PaintMini(Graphics g, string name, int x, int y, int w, int h)
@@ -1022,6 +1022,10 @@ namespace WatchDog
             btnPrimary = NewBtn(detail, "重启这个程序", 14, 0, 174, delegate { FixSelected(); }, true);
             btnKill = NewBtn(detail, "结束", 194, 0, 72, delegate { KillTarget(selected); }, false);
             btnOpen = NewBtn(detail, "打开位置", 272, 0, 76, delegate { OpenLocation(selected); }, false);
+            // 第二排：找原因用的工具（需要管理员确认，结果用记事本打开）
+            btnAnalyze = NewBtn(detail, "分析内存泄漏", 14, 0, 128, delegate { AnalyzeSelected(); }, false);
+            btnCapture = NewBtn(detail, "记录句柄现场", 148, 0, 108, delegate { CaptureSelected(); }, false);
+            btnReport = NewBtn(detail, "看报告", 262, 0, 86, delegate { OpenIncident(selected); }, false);
             LayoutDetailButtons();
             // 操作区按钮（两列）
             int ax = 14, half = 163, full = 334, ay = 34, step = 34;
@@ -1039,13 +1043,53 @@ namespace WatchDog
                 else RunTool("Install-Watchdog.ps1", "");
                 ReloadSoon(15);
             }, false);
-            NewBtn(actions, "打开工具文件夹", ax + half + 8, ay, half, delegate { StartShell("explorer.exe", "\"" + ToolDir + "\""); }, false);
+            NewBtn(actions, "打开工具文件夹", ax + half + 8, ay, half, delegate { StartShell("explorer.exe", "\"" + ToolDir + "\""); }, false); ay += step;
+            NewBtn(actions, "自动修复记录", ax, ay, half, delegate { ShowFixLog(); }, false);
+            NewBtn(actions, "现场记录和报告", ax + half + 8, ay, half, delegate
+            {
+                string dir = Path.Combine(DataDir, "incidents");
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                StartShell("explorer.exe", "\"" + dir + "\"");
+            }, false);
+        }
+        // ---- 找原因的工具（右键菜单和"选中的程序"里的按钮共用）----
+        void AnalyzeSelected()
+        {
+            if (selected == null) { Say("先在列表里选一个程序。"); return; }
+            ProcRow r; string arg = selected.StartsWith("svc:") && rows.TryGetValue(selected, out r) ? "-Id " + r.Pid : "-Name \"" + selected + "\"";
+            if (RunElevated("Analyze-Leak.ps1", arg + " -Open")) ReloadSoon(70);
+        }
+        void CaptureSelected()
+        {
+            if (selected == null) { Say("先在列表里选一个程序。"); return; }
+            ProcRow r; string arg = selected.StartsWith("svc:") && rows.TryGetValue(selected, out r) ? "-Id " + r.Pid : "-Name \"" + selected + "\"";
+            if (RunElevated("Capture-Handles.ps1", arg + " -Open")) ReloadSoon(15);
+        }
+        void OpenIncident(string name)
+        {
+            string f; if (name != null && incidents.TryGetValue(name, out f) && File.Exists(f)) StartShell("notepad.exe", "\"" + f + "\"");
+            else Say("这个程序还没有分析报告或句柄现场记录。点\"分析内存泄漏\"或\"记录句柄现场\"生成一份。");
+        }
+        // 看门狗最近的自动修复：重启前后的内存、重启后的状态核对
+        void ShowFixLog()
+        {
+            List<string> lines = new List<string>();
+            try
+            {
+                if (File.Exists(LogFile))
+                    foreach (string l in File.ReadAllLines(LogFile, System.Text.Encoding.UTF8))
+                        if (System.Text.RegularExpressions.Regex.IsMatch(l, " (FIX|DONE|CAPTURE|ANALYZE) ")) lines.Add(l);
+            }
+            catch { }
+            if (lines.Count == 0) { Say("还没有自动修复的记录。\n\n看门狗只在你空闲 10 分钟以上时重启出问题的程序，重启后会核对状态（服务在运行、相关程序都在、日志恢复写入），不对会补救一次。"); return; }
+            Say("最近的自动修复（DONE 一行是重启前 → 后的内存和状态核对结果）：\n\n" + string.Join("\n", lines.Skip(Math.Max(0, lines.Count - 14))));
         }
         void LayoutDetailButtons()
         {
             if (btnPrimary == null) return;
-            int y = Math.Max(150, detail.Height - 42);
+            int y = Math.Max(184, detail.Height - 42);
             foreach (Button b in new[] { btnPrimary, btnKill, btnOpen }) if (b.Top != y) b.Top = y;
+            foreach (Button b in new[] { btnAnalyze, btnCapture, btnReport }) if (b.Top != y - 34) b.Top = y - 34;
         }
         // 体检结论按内容定高度（问题数 + 最近 5 次检查），剩下的高度都给"选中的程序"
         void LayoutSide()
@@ -1053,7 +1097,7 @@ namespace WatchDog
             if (side == null || diag == null) return;
             int logLines = Math.Min(5, sys.Count);
             int need = DogY + DogH + 8 + 48 + issues.Count * 38 + (logLines > 0 ? 6 + 22 + logLines * 17 + 2 : 0) + 12;
-            int max = side.ClientSize.Height - ProfileH - 10 - 10 - 10 - actions.Height - 214;   // "选中的程序"至少留 214
+            int max = side.ClientSize.Height - ProfileH - 10 - 10 - 10 - actions.Height - 248;   // "选中的程序"至少留 248（两排按钮）
             int hgt = Math.Max(DogY + DogH + 8 + 48 + 50, Math.Min(need, max));
             if (diag.Height != hgt) diag.Height = hgt;
         }
@@ -1064,6 +1108,7 @@ namespace WatchDog
             string t = hit != null ? (hit.Rule.FixType == "none" ? "查看建议：" : "修复：") + hit.Rule.FixLabel
                 : selected != null && selected.StartsWith("svc:") ? "重启这个服务" : "重启这个程序";
             SetText(btnPrimary, t);
+            SetText(btnReport, selected != null && incidents.ContainsKey(selected) ? "看报告 ●" : "看报告");   // ● = 已经有报告
         }
 
         // ---------- 右键菜单 ----------
@@ -1077,22 +1122,10 @@ namespace WatchDog
             MenuItem(menu, "打开文件位置", delegate { OpenLocation(selected); });
             menuNote = MenuItem(menu, "✎ 写备注说明…", delegate { EditNote(selected); });
             // 句柄现场：管理员权限下把这个程序手里的句柄（注册表键路径、线程从哪个模块启动……）和当时的电源 / 屏幕事件记成一份文本
-            menuCapture = MenuItem(menu, "立即记录句柄现场（管理员）", delegate
-            {
-                if (selected == null || selected.StartsWith("svc:")) return;
-                if (RunElevated("Capture-Handles.ps1", "-Name \"" + selected + "\" -Open")) ReloadSoon(15);
-            });
+            menuCapture = MenuItem(menu, "立即记录句柄现场（管理员）", delegate { CaptureSelected(); });
             // 内存泄漏分析：它在忙什么（调用栈）、漏的是什么（内存里重复最多的内容），约 1 分钟，结果用记事本打开
-            menuAnalyze = MenuItem(menu, "分析内存泄漏：它在忙什么、漏的是什么（管理员，约 1 分钟）", delegate
-            {
-                if (selected == null) return;
-                ProcRow r; string arg = selected.StartsWith("svc:") && rows.TryGetValue(selected, out r) ? "-Id " + r.Pid : "-Name \"" + selected + "\"";
-                if (RunElevated("Analyze-Leak.ps1", arg + " -Open")) ReloadSoon(70);
-            });
-            menuIncident = MenuItem(menu, "打开最近的现场记录 / 分析报告", delegate
-            {
-                string f; if (selected != null && incidents.TryGetValue(selected, out f) && File.Exists(f)) StartShell("notepad.exe", "\"" + f + "\"");
-            });
+            menuAnalyze = MenuItem(menu, "分析内存泄漏：它在忙什么、漏的是什么（管理员，约 1 分钟）", delegate { AnalyzeSelected(); });
+            menuIncident = MenuItem(menu, "打开最近的现场记录 / 分析报告", delegate { OpenIncident(selected); });
             menu.Items.Add(new ToolStripSeparator());
             menuWatch = MenuItem(menu, "◉ 用看门狗监控（超过上限时提醒）", delegate { AddWatch(selected, false); });
             menuWatchA = MenuItem(menu, "◉ 用看门狗监控（超过上限时自动重启）", delegate { AddWatch(selected, true); });
@@ -1111,7 +1144,7 @@ namespace WatchDog
                 if (n == null) { e.Cancel = true; return; }
                 menuFix.Text = btnPrimary.Text;
                 menuNote.Text = HasNote(n) ? "✎ 修改备注说明…" : "✎ 写备注说明…";
-                menuCapture.Visible = !n.StartsWith("svc:");
+                menuCapture.Visible = true;
                 menuIncident.Visible = incidents.ContainsKey(n);
                 bool hasIssue = IssueOf(n) != null;
                 menuSnooze.Visible = hasIssue; menuNormal.Visible = hasIssue;

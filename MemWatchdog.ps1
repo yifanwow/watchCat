@@ -77,23 +77,101 @@ function Test-Rule($r) {
     $why -join ', '
 }
 
-function Restart-ProcessByName($name) {
+# Restart a program the way it is normally started: same path, and the start arguments from the rule
+# (e.g. G HUB's tray starts with --minimized at logon; without it a window would pop up).
+function Restart-ProcessByName($name, $startArgs) {
     $procs = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
     if (-not $procs) { return }
     $path = ($procs | Where-Object Path | Select-Object -First 1).Path
     $procs | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 5
     if ($path -and -not (Get-Process -Name $name -ErrorAction SilentlyContinue)) {
-        Start-Process -FilePath $path -WorkingDirectory (Split-Path $path)
+        if ($startArgs) { Start-Process -FilePath $path -ArgumentList $startArgs -WorkingDirectory (Split-Path $path) }
+        else { Start-Process -FilePath $path -WorkingDirectory (Split-Path $path) }
     }
 }
 
 function Invoke-Fix($r) {
     switch ($r.fix.type) {
-        'restartProcess' { Restart-ProcessByName $r.when.process }
+        'restartProcess' { Restart-ProcessByName $r.when.process $r.fix.args }
         'restartService' { & (Join-Path $PSScriptRoot 'Restart-ServiceHard.ps1') -Name $r.fix.service | Out-Null }
         'script'         { & (Join-Path $PSScriptRoot $r.fix.script) -Quiet | Out-Null }
     }
+}
+
+# ---- Restart only at a good moment ----
+# "idleMin": no keyboard / mouse input for this many minutes (a light flicker or a 2-second sound gap goes unnoticed).
+# "skipIfGame": not while a game started by Steam is running.
+function Get-IdleMinutes {
+    if (-not ('WdNs.WdIdle' -as [type])) {
+        Add-Type -Namespace WdNs -Name WdIdle -MemberDefinition @"
+[StructLayout(LayoutKind.Sequential)] public struct LII { public uint cbSize; public uint dwTime; }
+[DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LII p);
+public static double Minutes() { LII l = new LII(); l.cbSize = 8; if (!GetLastInputInfo(ref l)) return 0; return (unchecked((uint)System.Environment.TickCount - l.dwTime)) / 60000.0; }
+"@
+    }
+    [WdNs.WdIdle]::Minutes()
+}
+# A game = something Steam started from steamapps, except always-on Steam apps (desktop pets, wallpapers, cursors)
+# listed in the rule's "notGames"
+function Test-SteamGame($notGames) {
+    $steam = Get-Process steam -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $steam) { return $false }
+    $skip = @('steamwebhelper', 'steamservice', 'gameoverlayui', 'gameoverlayui64', 'steamerrorreporter', 'steamerrorreporter64', 'crashhandler', 'crashhandler64') + @($notGames)
+    $kids = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($steam.Id)" -ErrorAction SilentlyContinue |
+        Where-Object { $skip -notcontains [IO.Path]::GetFileNameWithoutExtension($_.Name) })
+    $kids.Count -gt 0
+}
+
+# ---- After a restart: check that things are back the way they were ("verify" in the rule) ----
+#   running   : these programs must be running again
+#   service   : the restarted service must be Running (checked automatically for restartService)
+#   file      : this log file (or the newest file in this folder) must be written again after the restart,
+#               optionally containing one of "text" (e.g. iCUE reconnected, the lighting effect is drawing frames)
+#   soft      : a missing log update is only a warning (e.g. a static lighting effect writes no frames)
+# If something is missing after "withinSec", it is recovered once (service started again / program started again
+# with its usual arguments) and checked again.
+function Test-FileSince($path, $texts, $since) {
+    $f = if (Test-Path -LiteralPath $path -PathType Container) { Get-ChildItem -LiteralPath $path -File | Sort-Object LastWriteTime | Select-Object -Last 1 } else { Get-Item -LiteralPath $path -ErrorAction SilentlyContinue }
+    if (-not $f -or $f.LastWriteTime -lt $since) { return $false }
+    if (-not $texts) { return $true }
+    $tail = Get-Content -LiteralPath $f.FullName -Tail 400 -ErrorAction SilentlyContinue
+    foreach ($t in $texts) { if ($tail | Select-String -SimpleMatch $t -Quiet) { return $true } }
+    $false
+}
+function Get-VerifyState($r, $t0) {
+    $v = $r.verify; $miss = @()
+    foreach ($n in @($v.running)) { if ($n -and -not (Get-Process -Name $n -ErrorAction SilentlyContinue)) { $miss += $n } }
+    $svcDown = $r.fix.type -eq 'restartService' -and (Get-Service -Name $r.fix.service -ErrorAction SilentlyContinue).Status -ne 'Running'
+    $fileOk = (-not $v.file) -or (Test-FileSince $v.file @($v.text) $t0)
+    [pscustomobject]@{ Missing = $miss; SvcDown = $svcDown; FileOk = $fileOk }
+}
+function Confirm-Fix($r, $t0, $paths) {
+    $v = $r.verify
+    if (-not $v -and $r.fix.type -ne 'restartService') { return 'no check defined' }
+    if (-not $v) { $v = [pscustomobject]@{}; $r | Add-Member -NotePropertyName verify -NotePropertyValue $v -Force }
+    $within = if ($v.withinSec) { [int]$v.withinSec } else { 60 }
+    for ($round = 1; $round -le 2; $round++) {
+        $deadline = (Get-Date).AddSeconds($within)
+        do {
+            $st = Get-VerifyState $r $t0
+            if (-not $st.Missing -and -not $st.SvcDown -and $st.FileOk) { return $(if ($round -eq 1) { 'checked: all back to normal' } else { 'checked: back to normal after one recovery' }) }
+            Start-Sleep -Seconds 5
+        } while ((Get-Date) -lt $deadline)
+        if ($round -eq 2) { break }
+        # recover once
+        if ($st.SvcDown) { Start-Service -Name $r.fix.service -ErrorAction SilentlyContinue }
+        foreach ($n in $st.Missing) {
+            $pp = $paths[$n]
+            if ($pp) { $a = $null; if ($r.fix.args -and $n -eq $r.when.process) { $a = $r.fix.args }; if ($a) { Start-Process -FilePath $pp -ArgumentList $a } else { Start-Process -FilePath $pp } }
+        }
+        if (-not $st.Missing -and -not $st.SvcDown -and -not $st.FileOk -and $v.soft) { return 'checked: running; log not updated (normal if the effect is static)' }
+    }
+    $msg = @()
+    if ($st.Missing) { $msg += ('not running: ' + ($st.Missing -join ', ')) }
+    if ($st.SvcDown) { $msg += ('service not running: ' + $r.fix.service) }
+    if (-not $st.FileOk) { $msg += ('log not updated: ' + $v.file) }
+    'CHECK FAILED - ' + ($msg -join '; ')
 }
 
 # ---- Check every rule ----
@@ -107,9 +185,25 @@ foreach ($r in $rules) {
     if (-not $r.auto -or $r.fix.type -eq 'none') { Log ("NOTICE {0}: {1} ({2})" -f $r.id, $r.title, $why); continue }
     # one fix per target per run (e.g. the NVIDIA database rebuild already restarts the container)
     if ($fixedTargets.ContainsKey($r.target)) { Write-Host ("skip {0}: {1} already fixed this run" -f $r.id, $r.target); continue }
+    if ($r.idleMin -and -not $noAct) {
+        $idle = Get-IdleMinutes
+        if ($idle -lt [double]$r.idleMin) { Write-Host ("wait {0}: in use (idle {1:N0} of {2} min), next run" -f $r.id, $idle, $r.idleMin); continue }
+    }
+    if ($r.skipIfGame -and -not $noAct -and (Test-SteamGame $r.notGames)) { Write-Host ("wait {0}: a game is running, next run" -f $r.id); continue }
     Log ("FIX {0}: {1} ({2}) -> {3}" -f $r.id, $r.title, $why, $r.fix.label)
     if ($noAct) { continue }
-    try { Invoke-Fix $r; $fixedTargets[$r.target] = 1 } catch { Log ("  failed: {0}" -f $_.Exception.Message) }
+    # remember where the programs that must come back live, to start them again if needed
+    $paths = @{}
+    foreach ($n in @($r.verify.running) + @($r.when.process)) { if ($n -and $n -notlike 'svc:*') { $pp = (Get-Process -Name $n -ErrorAction SilentlyContinue | Where-Object Path | Select-Object -First 1).Path; if ($pp) { $paths[$n] = $pp } } }
+    $before = if ($r.when.process) { Get-TargetMB $r.when.process } else { $null }
+    $t0 = Get-Date
+    try {
+        Invoke-Fix $r; $fixedTargets[$r.target] = 1
+        $check = Confirm-Fix $r $t0 $paths
+        $after = if ($r.when.process) { Get-TargetMB $r.when.process } else { $null }
+        $b1 = if ($null -ne $before) { $before } else { '?' }; $a1 = if ($null -ne $after) { $after } else { '?' }
+        Log ("DONE {0}: {1} MB -> {2} MB, {3}" -f $r.id, $b1, $a1, $check)
+    } catch { Log ("  failed: {0}" -f $_.Exception.Message) }
 }
 
 # ---- History for the WatchDog window: one small CSV per day, old days deleted ----

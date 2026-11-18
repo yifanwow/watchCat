@@ -6,6 +6,7 @@
     "when": { "file": "C:\\ProgramData\\NVIDIA Corporation\\nvtopps\\nvtopps.db3", "minFileMB": 300 },
     "cause": "NVIDIA 显示容器的 nvtopps.db3 数据库异常变大（正常只有几 MB）。容器每次启动都把它读进内存并反复改写，导致占用几 GB 内存、硬盘一直在写。",
     "fix": { "type": "script", "script": "Fix-NvTopps.ps1", "label": "重建 NVIDIA 数据库（屏幕可能闪一下）" },
+    "idleMin": 10,
     "auto": true
   },
   {
@@ -15,33 +16,76 @@
     "when": { "process": "svc:NVDisplay.ContainerLocalSystem", "minMB": 1500 },
     "cause": "NVIDIA 显示容器正常只占 100–200 MB。多数情况是 nvtopps.db3 数据库膨胀引起的；数据库不大时，重启这个服务也能释放内存。",
     "fix": { "type": "restartService", "service": "NVDisplay.ContainerLocalSystem", "label": "重启 NVIDIA 显示容器（屏幕可能闪一下）" },
+    "idleMin": 10,
+    "verify": { "running": ["NVDisplay.Container"], "withinSec": 60 },
     "auto": true
   },
   {
     "id": "audiosrv-leak",
     "title": "Windows 音频服务内存泄漏",
     "target": "svc:Audiosrv",
-    "when": { "process": "svc:Audiosrv", "minMB": 1000 },
-    "cause": "Windows 音频服务正常只占几十 MB。通常是声卡增强插件（Nahimic、Sonic Studio、部分 Realtek 音效）引起，长时间不重启会越涨越大。",
+    "when": { "process": "svc:Audiosrv", "minMB": 300 },
+    "cause": "Windows 音频服务正常只占几 MB 到几十 MB。通常是声卡增强插件（Nahimic、Sonic Studio、部分 Realtek 音效）或反复连接音频服务的软件引起，会一直慢慢涨。",
     "fix": { "type": "restartService", "service": "Audiosrv", "label": "重启音频服务（声音断 2–3 秒）" },
+    "idleMin": 10,
+    "verify": { "withinSec": 60 },
     "auto": true
   },
   {
     "id": "lghub-tray",
     "title": "罗技 G HUB 托盘泄漏",
     "target": "lghub_system_tray",
-    "when": { "process": "lghub_system_tray", "minMB": 800 },
-    "cause": "G HUB 托盘程序的已知问题，长时间运行可涨到几 GB。它只是托盘界面，重启它不影响鼠标键盘的设置和灯效。",
-    "fix": { "type": "restartProcess", "label": "重启 G HUB 托盘" },
+    "when": { "process": "lghub_system_tray", "minMB": 500 },
+    "cause": "G HUB 托盘程序一直慢慢涨（约 4 MB/小时）。它只是托盘界面，重启它不影响鼠标键盘的设置和灯效；按开机时的方式（--minimized）重新启动，不会弹窗口。",
+    "fix": { "type": "restartProcess", "args": "--minimized", "label": "重启 G HUB 托盘" },
+    "idleMin": 10,
+    "verify": { "running": ["lghub_system_tray", "lghub_agent"], "withinSec": 60 },
+    "auto": true
+  },
+  {
+    "id": "lghub-agent",
+    "title": "罗技 G HUB 后台泄漏",
+    "target": "lghub_agent",
+    "when": { "process": "lghub_agent", "minMB": 1500 },
+    "cause": "G HUB 后台（lghub_agent）会反复连接 Windows 音频服务，并把扫描到的进程启动命令一份份存下来（自动识别游戏），越用越大。重启后它会重新下发鼠标键盘的设置和灯效。",
+    "fix": { "type": "script", "script": "Restart-GHub.ps1", "label": "重启 G HUB 后台和托盘（鼠标键盘设置会重新下发）" },
+    "idleMin": 10,
+    "verify": { "running": ["lghub_agent", "lghub_system_tray"], "withinSec": 90 },
     "auto": true
   },
   {
     "id": "asus-aura",
-    "title": "华硕 Aura 灯效服务占用过高",
+    "title": "华硕 Aura 灯效服务泄漏",
     "target": "svc:LightingService",
-    "when": { "process": "svc:LightingService", "minMB": 1200 },
-    "cause": "华硕 Aura 灯效服务正常只占几十 MB，长时间运行偶尔会越涨越大。",
+    "when": { "process": "svc:LightingService", "minMB": 400 },
+    "cause": "华硕 Aura 灯效服务在用软件逐帧计算灯光动画时一直慢慢涨（约 5 MB/小时）。重启后它会读回上次的灯效脚本，动画接着跑；把内存条灯效改成静态或硬件自带效果可以从根上避开。",
     "fix": { "type": "restartService", "service": "LightingService", "label": "重启 Aura 灯效服务（灯效会闪一下）" },
+    "idleMin": 10,
+    "verify": { "file": "C:\\ProgramData\\ASUS\\ARMOURY CRATE Diagnosis\\OptionHAL\\EneHal.log", "soft": true, "withinSec": 120 },
+    "auto": true
+  },
+  {
+    "id": "corsair-cpuid",
+    "title": "海盗船 iCUE CPU 信息服务泄漏",
+    "target": "CorsairCpuIdService",
+    "when": { "process": "CorsairCpuIdService", "minMB": 500 },
+    "cause": "iCUE 读取 CPU / 主板 / 硬盘信息的服务每约 1.5 秒把整份硬件和传感器清单生成一遍发给 iCUE，旧的不释放（约 9 MB/小时）。它在后台，重启后 iCUE 会自动重新连上。",
+    "fix": { "type": "restartService", "service": "CorsairCpuIdService", "label": "重启 iCUE 的 CPU 信息服务" },
+    "idleMin": 10,
+    "verify": { "running": ["iCUE", "CorsairCpuIdService"], "file": "C:\\ProgramData\\Corsair\\Logs\\CorsairCpuIdService", "text": ["Incoming connection", "Changed the list of devices"], "withinSec": 120 },
+    "auto": true
+  },
+  {
+    "id": "steam-webhelper",
+    "title": "Steam 网页界面泄漏",
+    "target": "steamwebhelper",
+    "when": { "process": "steamwebhelper", "minMB": 2500 },
+    "cause": "Steam 的游戏库页面反复重新生成所有游戏卡片，旧的不释放，网页进程一直涨（可达几 GB）。只重启网页界面，Steam 本身、下载和登录都不受影响；只在电脑空闲、没在玩游戏时做。",
+    "fix": { "type": "script", "script": "Restart-SteamWeb.ps1", "label": "重启 Steam 网页界面（Steam 本身不动）" },
+    "idleMin": 10,
+    "skipIfGame": true,
+    "notGames": ["BongoCat", "wallpaper32", "wallpaper64", "CursorFX"],
+    "verify": { "running": ["steam", "steamwebhelper"], "withinSec": 120 },
     "auto": true
   }
 ]
