@@ -1125,6 +1125,7 @@ namespace WatchDog
         // ---------- 托盘：图标一直在托盘里；点关闭 / 最小化只是把窗口藏起来，在后台继续记录 ----------
         void BuildTray()
         {
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplayChanged;   // 静态事件：Dispose 里一定要取消，否则窗口对象永远释放不掉
             tray = new NotifyIcon(); tray.Icon = formIcon ?? SystemIcons.Application; tray.Text = "WatchDog"; tray.Visible = true;
             trayMenu = new ContextMenuStrip(); trayMenu.Renderer = menu.Renderer; trayMenu.Font = fCN;
             ToolStripMenuItem open = MenuItem(trayMenu, "打开 WatchDog", delegate { ShowFromTray(); }); open.Font = fCNb;
@@ -1150,8 +1151,40 @@ namespace WatchDog
         void ShowFromTray()
         {
             bool wasHidden = !Visible;
+            // 窗口藏在托盘时，它所在的显示器被关掉 / 拔掉，Windows 不会帮藏起来的窗口挪位置：先挪到还开着的屏幕上再显示
+            if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+            Rectangle nb = OnScreen(Bounds, Screen.AllScreens.Select(x => x.WorkingArea).ToArray(), Screen.FromPoint(Cursor.Position).WorkingArea);
+            if (nb != Bounds) Bounds = nb;
             Show(); WindowState = lastState; Activate();
             if (wasHidden) RefreshAll();
+        }
+        // 显示器开关、插拔、改分辨率时：窗口开着而且整个跑到看不见的地方，也挪回来
+        void DisplayChanged(object s, EventArgs e)
+        {
+            if (!Visible || WindowState == FormWindowState.Minimized) return;
+            BeginInvoke((MethodInvoker)delegate
+            {
+                bool max = WindowState == FormWindowState.Maximized;
+                Rectangle cur = max ? RestoreBounds : Bounds;
+                Rectangle nb = OnScreen(cur, Screen.AllScreens.Select(x => x.WorkingArea).ToArray(), Screen.FromPoint(Cursor.Position).WorkingArea);
+                if (nb == cur) return;
+                if (max) WindowState = FormWindowState.Normal;
+                Bounds = nb;
+                if (max) WindowState = FormWindowState.Maximized;
+            });
+        }
+        // 标题栏有一块（至少 120 × 30）落在某个屏幕的可用区域里，就算看得见、拖得动，位置不变；
+        // 否则放到 fallback（鼠标所在屏幕）的正中间，太大就缩到放得下
+        static Rectangle OnScreen(Rectangle r, Rectangle[] areas, Rectangle fallback)
+        {
+            Rectangle caption = new Rectangle(r.X + 8, r.Y, Math.Max(1, r.Width - 16), 30);
+            foreach (Rectangle a in areas)
+            {
+                Rectangle v = Rectangle.Intersect(a, caption);
+                if (v.Width >= 120 && v.Height >= 20) return r;
+            }
+            int w = Math.Min(r.Width, fallback.Width), h = Math.Min(r.Height, fallback.Height);
+            return new Rectangle(fallback.X + (fallback.Width - w) / 2, fallback.Y + (fallback.Height - h) / 2, w, h);
         }
 
         protected override void Dispose(bool disposing)
@@ -1160,7 +1193,7 @@ namespace WatchDog
             {
                 if (timer != null) timer.Dispose();
                 if (showTimer != null) showTimer.Dispose();
-                if (tray != null) { tray.Visible = false; tray.Dispose(); }   // 不留下"幽灵"托盘图标
+                if (tray != null) { Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= DisplayChanged; tray.Visible = false; tray.Dispose(); }   // 不留下"幽灵"托盘图标
                 if (trayMenu != null) trayMenu.Dispose();
                 if (menu != null) menu.Dispose();
                 if (rowH != null) rowH.Dispose();
