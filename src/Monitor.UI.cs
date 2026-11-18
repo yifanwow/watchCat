@@ -124,7 +124,7 @@ namespace WatchDog
         BufferedListView lv;
         ImageList rowH;
         ContextMenuStrip menu, trayMenu;
-        ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote, menuCapture, menuIncident;
+        ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote, menuCapture, menuIncident, menuAnalyze;
         Button btnPrimary, btnKill, btnOpen, btnInstall, btnIgnored;
         NotifyIcon tray;
         Timer timer, showTimer;
@@ -1082,7 +1082,14 @@ namespace WatchDog
                 if (selected == null || selected.StartsWith("svc:")) return;
                 if (RunElevated("Capture-Handles.ps1", "-Name \"" + selected + "\" -Open")) ReloadSoon(15);
             });
-            menuIncident = MenuItem(menu, "打开最近的句柄现场记录", delegate
+            // 内存泄漏分析：它在忙什么（调用栈）、漏的是什么（内存里重复最多的内容），约 1 分钟，结果用记事本打开
+            menuAnalyze = MenuItem(menu, "分析内存泄漏：它在忙什么、漏的是什么（管理员，约 1 分钟）", delegate
+            {
+                if (selected == null) return;
+                ProcRow r; string arg = selected.StartsWith("svc:") && rows.TryGetValue(selected, out r) ? "-Id " + r.Pid : "-Name \"" + selected + "\"";
+                if (RunElevated("Analyze-Leak.ps1", arg + " -Open")) ReloadSoon(70);
+            });
+            menuIncident = MenuItem(menu, "打开最近的现场记录 / 分析报告", delegate
             {
                 string f; if (selected != null && incidents.TryGetValue(selected, out f) && File.Exists(f)) StartShell("notepad.exe", "\"" + f + "\"");
             });

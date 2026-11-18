@@ -16,7 +16,7 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Path $stage | Out-Null
 
 # Only these files go into the package (an allow-list, so personal files can never slip in)
-$files = 'WatchDog.exe', 'MemWatchdog.ps1', 'Install-Watchdog.ps1', 'Fix-NvTopps.ps1', 'Restart-ServiceHard.ps1', 'Capture-Handles.ps1', 'HandleProbe.cs',
+$files = 'WatchDog.exe', 'MemWatchdog.ps1', 'Install-Watchdog.ps1', 'Fix-NvTopps.ps1', 'Restart-ServiceHard.ps1', 'Capture-Handles.ps1', 'HandleProbe.cs', 'Analyze-Leak.ps1', 'LeakProbe.cs',
          'rules.json', 'rules.local.example.json', 'README.md'
 foreach ($f in $files) { Copy-Item (Join-Path $dir $f) $stage }
 New-Item -ItemType Directory -Path (Join-Path $stage 'extras') | Out-Null

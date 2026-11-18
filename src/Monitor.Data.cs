@@ -398,7 +398,10 @@ namespace WatchDog
                     foreach (FileInfo f in new DirectoryInfo(dir).GetFiles("*.txt").OrderBy(f => f.LastWriteTime))
                     {
                         string n = Path.GetFileNameWithoutExtension(f.Name);
-                        if (n.Length > 16) inc[n.Substring(16)] = f.FullName;   // 去掉 "yyyyMMdd-HHmmss-"
+                        if (n.Length <= 16) continue;
+                        n = n.Substring(16);                                  // 去掉 "yyyyMMdd-HHmmss-"
+                        if (n.StartsWith("leak-")) n = n.Substring(5);        // 内存泄漏分析：yyyyMMdd-HHmmss-leak-程序名
+                        inc[n] = f.FullName;
                     }
             }
             catch { }
@@ -410,7 +413,7 @@ namespace WatchDog
                 {
                     string[] lines = File.ReadAllLines(LogFile, System.Text.Encoding.UTF8);
                     for (int i = lines.Length - 1; i >= Math.Max(0, lines.Length - 200); i--)
-                        if (System.Text.RegularExpressions.Regex.IsMatch(lines[i], "FIX|NOTICE|RESTART|REBUILD|HIGH|CAPTURE")) { lastAction = lines[i]; break; }
+                        if (System.Text.RegularExpressions.Regex.IsMatch(lines[i], "FIX|NOTICE|RESTART|REBUILD|HIGH|CAPTURE|ANALYZE")) { lastAction = lines[i]; break; }
                 }
             }
             catch { }

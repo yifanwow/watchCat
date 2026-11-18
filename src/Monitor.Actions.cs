@@ -242,6 +242,8 @@ namespace WatchDog
                 if (IsIgnored("io:" + r.Name) != null || seen.Contains(r.Name)) continue;
                 list.Add(NewIssue(Label(r.Name) + " 正在大量读写", string.Format("{0:N1} MB/s，长时间这样会拖慢硬盘；如果它不该这么忙，可以重启它", r.IoMBs), 1, r.Name, "io:" + r.Name));
             }
+            // 已经做过内存泄漏分析的（右键 → 分析内存泄漏），说明里提示一下
+            foreach (Issue i in list) if (i.Key != null && i.Key.StartsWith("prog:") && i.Target != null && incidents.ContainsKey(i.Target)) i.Sub = "已有分析报告（右键查看）· " + i.Sub;
             // 同样严重时：内核问题最先，其次是突发的泄漏（"疑似"），最后是慢慢涨的
             list = list.OrderByDescending(i => i.Level).ThenBy(i => i.Key == "kernel" ? 0 : i.Title.Contains("疑似") ? 1 : 2).ToList();
             int nBad = list.Count(i => i.Level == 2), nWarn = list.Count(i => i.Level == 1);
