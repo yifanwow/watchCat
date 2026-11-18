@@ -124,7 +124,7 @@ namespace WatchDog
         BufferedListView lv;
         ImageList rowH;
         ContextMenuStrip menu, trayMenu;
-        ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote;
+        ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote, menuCapture, menuIncident;
         Button btnPrimary, btnKill, btnOpen, btnInstall, btnIgnored;
         NotifyIcon tray;
         Timer timer, showTimer;
@@ -1076,6 +1076,16 @@ namespace WatchDog
             MenuItem(menu, "结束这个程序", delegate { KillTarget(selected); });
             MenuItem(menu, "打开文件位置", delegate { OpenLocation(selected); });
             menuNote = MenuItem(menu, "✎ 写备注说明…", delegate { EditNote(selected); });
+            // 句柄现场：管理员权限下把这个程序手里的句柄（注册表键路径、线程从哪个模块启动……）和当时的电源 / 屏幕事件记成一份文本
+            menuCapture = MenuItem(menu, "立即记录句柄现场（管理员）", delegate
+            {
+                if (selected == null || selected.StartsWith("svc:")) return;
+                if (RunElevated("Capture-Handles.ps1", "-Name \"" + selected + "\" -Open")) ReloadSoon(15);
+            });
+            menuIncident = MenuItem(menu, "打开最近的句柄现场记录", delegate
+            {
+                string f; if (selected != null && incidents.TryGetValue(selected, out f) && File.Exists(f)) StartShell("notepad.exe", "\"" + f + "\"");
+            });
             menu.Items.Add(new ToolStripSeparator());
             menuWatch = MenuItem(menu, "◉ 用看门狗监控（超过上限时提醒）", delegate { AddWatch(selected, false); });
             menuWatchA = MenuItem(menu, "◉ 用看门狗监控（超过上限时自动重启）", delegate { AddWatch(selected, true); });
@@ -1094,6 +1104,8 @@ namespace WatchDog
                 if (n == null) { e.Cancel = true; return; }
                 menuFix.Text = btnPrimary.Text;
                 menuNote.Text = HasNote(n) ? "✎ 修改备注说明…" : "✎ 写备注说明…";
+                menuCapture.Visible = !n.StartsWith("svc:");
+                menuIncident.Visible = incidents.ContainsKey(n);
                 bool hasIssue = IssueOf(n) != null;
                 menuSnooze.Visible = hasIssue; menuNormal.Visible = hasIssue;
                 menuRestore.Visible = HasIgnore(n);

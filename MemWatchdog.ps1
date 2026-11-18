@@ -121,6 +121,41 @@ $day   = (Get-Date).ToString('yyyyMMdd')
 
 # Per program (grouped by name): top 30 by memory + top 10 by handle count + every process named in a rule
 $all = Get-Process
+
+# ---- Handle surge: record the scene (Capture-Handles.ps1 writes data\incidents\*.txt) ----
+# A process whose handle count rose in two runs in a row, and a lot in the last 10 minutes, gets its handles dumped:
+# which registry keys / which module's threads it is holding. One capture per program per hour, at most 2 per run.
+$statePath = Join-Path $dataDir 'handle-state.csv'
+$prevH = @{}
+if (Test-Path $statePath) { try { foreach ($r in (Import-Csv $statePath)) { $prevH[[int]$r.Pid] = $r } } catch {} }
+$kNow = Get-CimInstance Win32_PerfRawData_PerfOS_Memory -ErrorAction SilentlyContinue
+$poolNow = if ($kNow) { [int]($kNow.PoolPagedBytes / 1MB) } else { 0 }
+$hState = @(); $surge = @()
+foreach ($p in $all) {
+    $h = $p.HandleCount
+    if ($h -lt 1000) { continue }
+    $o = $prevH[$p.Id]
+    $same = $o -and $o.Name -eq $p.ProcessName
+    $h1 = if ($same) { [int]$o.H } else { -1 }    # last run
+    $h0 = if ($same) { [int]$o.H1 } else { -1 }   # the run before
+    $hState += [pscustomobject]@{ Pid = $p.Id; Name = $p.ProcessName; H = $h; H1 = $h1; Pool = $poolNow }
+    if ($h1 -lt 0 -or $h0 -lt 0) { continue }
+    $g = $h - $h1; $g0 = $h1 - $h0; $kg = $poolNow - [int]$o.Pool
+    if ($h -ge 3000 -and $g0 -ge 300 -and ($g -ge 2000 -or ($g -ge 1000 -and $g -ge 0.25 * $h1) -or ($kg -ge 50 -and $g -ge 500))) {
+        $surge += [pscustomobject]@{ P = $p; G = $g; G0 = $g0; KG = $kg }
+    }
+}
+$hState | Export-Csv -Path $statePath -NoTypeInformation -Encoding UTF8
+$incDir = Join-Path $dataDir 'incidents'
+foreach ($sg in ($surge | Sort-Object G -Descending | Select-Object -First 2)) {
+    $safe = ($sg.P.ProcessName -replace '[^\w\.\-]', '_')
+    if (Test-Path $incDir) {
+        $recent = Get-ChildItem $incDir -Filter "*-$safe.txt" -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-1) }
+        if ($recent) { continue }
+    }
+    $why = '看门狗自动记录：句柄 10 分钟 +{0:N0}（再之前 10 分钟 +{1:N0}），现在 {2:N0}；内核分页池 10 分钟 {3:+#,0;-#,0;0} MB' -f $sg.G, $sg.G0, $sg.P.HandleCount, $sg.KG
+    try { & (Join-Path $PSScriptRoot 'Capture-Handles.ps1') -Id $sg.P.Id -Reason $why | Out-Null } catch { Log ("CAPTURE failed for {0}: {1}" -f $sg.P.ProcessName, $_.Exception.Message) }
+}
 $groups = foreach ($g in ($all | Group-Object ProcessName)) {
     $cpuSec = 0.0; $handles = 0
     foreach ($p in $g.Group) { try { $cpuSec += $p.TotalProcessorTime.TotalSeconds } catch {}; $handles += $p.HandleCount }

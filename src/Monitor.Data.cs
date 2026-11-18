@@ -103,7 +103,8 @@ namespace WatchDog
         Dictionary<string, Trend> analysisH = new Dictionary<string, Trend>();
         Dictionary<string, List<HistPt>> histLong = new Dictionary<string, List<HistPt>>(), histHLong = new Dictionary<string, List<HistPt>>();   // 最多 7 天，每小时一个点（最低值）
         List<SysRow> sysLong = new List<SysRow>();   // 最多 7 天，每小时一个点（平均值）
-        Dictionary<string, Creep> creep = new Dictionary<string, Creep>();   // 慢性泄漏（7 天记录）
+        Dictionary<string, Creep> creep = new Dictionary<string, Creep>();
+        Dictionary<string, string> incidents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // 程序名 -> 最近一份句柄现场记录   // 慢性泄漏（7 天记录）
         List<SysRow> sys = new List<SysRow>();
         string histSig = "", rulesSig = "";
         long ignoreSig = -1;
@@ -388,6 +389,20 @@ namespace WatchDog
             }
             svcPid = map;
             taskInstalled = TaskExists("MemWatchdog");
+            // 句柄现场记录（Capture-Handles.ps1 写在 data\incidents\，文件名 时间-程序名.txt）：每个程序最近的一份
+            Dictionary<string, string> inc = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                string dir = Path.Combine(DataDir, "incidents");
+                if (Directory.Exists(dir))
+                    foreach (FileInfo f in new DirectoryInfo(dir).GetFiles("*.txt").OrderBy(f => f.LastWriteTime))
+                    {
+                        string n = Path.GetFileNameWithoutExtension(f.Name);
+                        if (n.Length > 16) inc[n.Substring(16)] = f.FullName;   // 去掉 "yyyyMMdd-HHmmss-"
+                    }
+            }
+            catch { }
+            incidents = inc;
             lastAction = "";
             try
             {
@@ -395,7 +410,7 @@ namespace WatchDog
                 {
                     string[] lines = File.ReadAllLines(LogFile, System.Text.Encoding.UTF8);
                     for (int i = lines.Length - 1; i >= Math.Max(0, lines.Length - 200); i--)
-                        if (System.Text.RegularExpressions.Regex.IsMatch(lines[i], "FIX|NOTICE|RESTART|REBUILD|HIGH")) { lastAction = lines[i]; break; }
+                        if (System.Text.RegularExpressions.Regex.IsMatch(lines[i], "FIX|NOTICE|RESTART|REBUILD|HIGH|CAPTURE")) { lastAction = lines[i]; break; }
                 }
             }
             catch { }

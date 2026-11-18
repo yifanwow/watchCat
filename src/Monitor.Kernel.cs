@@ -175,6 +175,7 @@ namespace WatchDog
                 // 漏的是哪类句柄（后台每 10 分钟查一次），放在说明最前面：比如"注册表键"多半是反复打开注册表不关
                 string kinds;
                 if (lvl > 0 && title.Contains("句柄") && handleKinds.TryGetValue(r.Name, out kinds)) sub = "主要是" + kinds + " · " + sub;
+                if (lvl > 0 && title.Contains("句柄") && incidents.ContainsKey(r.Name)) sub = "已记录现场（右键查看）· " + sub;
                 if (lvl > 0) res[r.Name] = NewIssue(title, sub, lvl, r.Name, "res:" + r.Name);
             }
             resIssues = res;
