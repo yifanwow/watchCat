@@ -125,7 +125,7 @@ namespace WatchDog
         ImageList rowH;
         ContextMenuStrip menu, trayMenu;
         ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote, menuCapture, menuIncident, menuAnalyze;
-        Button btnPrimary, btnKill, btnOpen, btnInstall, btnIgnored, btnAnalyze, btnCapture, btnReport;
+        Button btnPrimary, btnKill, btnOpen, btnAnalyze, btnCapture, btnReport;
         NotifyIcon tray;
         Timer timer, showTimer;
         Icon formIcon;
@@ -201,8 +201,7 @@ namespace WatchDog
             detail = new BufferedPanel(); detail.Dock = DockStyle.Fill;
             detail.Paint += PaintDetail;
             detail.Resize += delegate { LayoutDetailButtons(); };
-            actions = new BufferedPanel(); actions.Dock = DockStyle.Bottom; actions.Height = 212;
-            actions.Paint += delegate(object s, PaintEventArgs e) { Frame(e.Graphics, actions.Width, actions.Height, "ACTIONS", "操作", false); };
+            actions = new BufferedPanel(); actions.Dock = DockStyle.Bottom; actions.Height = 236;   // 画法见 Monitor.ActionsPanel.cs
             side.Controls.Add(detail);
             side.Controls.Add(Spacer(10));
             side.Controls.Add(diag);
@@ -1027,30 +1026,7 @@ namespace WatchDog
             btnCapture = NewBtn(detail, "记录句柄现场", 148, 0, 108, delegate { CaptureSelected(); }, false);
             btnReport = NewBtn(detail, "看报告", 262, 0, 86, delegate { OpenIncident(selected); }, false);
             LayoutDetailButtons();
-            // 操作区按钮（两列）
-            int ax = 14, half = 163, full = 334, ay = 34, step = 34;
-            NewBtn(actions, "一键修复全部问题", ax, ay, full, delegate { FixAll(); }, true); ay += step;
-            NewBtn(actions, "立即检查一次", ax, ay, half, delegate { RunCheckNow(); }, false);
-            NewBtn(actions, "修复 NVIDIA 数据库", ax + half + 8, ay, half, delegate
-            {
-                if (Ask("将停止并重建 NVIDIA 的 nvtopps 数据库，屏幕可能闪一下。需要管理员权限。确定吗？")) { RunTool("Fix-NvTopps.ps1", ""); ReloadSoon(8); }
-            }, false); ay += step;
-            NewBtn(actions, "规则（查看 / 修改）", ax, ay, half, delegate { ShowRulesWindow(); }, false);
-            btnIgnored = NewBtn(actions, "已忽略的问题", ax + half + 8, ay, half, delegate { ShowIgnoredWindow(); }, false); ay += step;
-            btnInstall = NewBtn(actions, "安装看门狗", ax, ay, half, delegate
-            {
-                if (taskInstalled) { if (Ask("将删除看门狗计划任务，之后不再自动检查。确定吗？")) RunTool("Install-Watchdog.ps1", "-Uninstall"); }
-                else RunTool("Install-Watchdog.ps1", "");
-                ReloadSoon(15);
-            }, false);
-            NewBtn(actions, "打开工具文件夹", ax + half + 8, ay, half, delegate { StartShell("explorer.exe", "\"" + ToolDir + "\""); }, false); ay += step;
-            NewBtn(actions, "自动修复记录", ax, ay, half, delegate { ShowFixLogWindow(); }, false);
-            NewBtn(actions, "现场记录和报告", ax + half + 8, ay, half, delegate
-            {
-                string dir = Path.Combine(DataDir, "incidents");
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                StartShell("explorer.exe", "\"" + dir + "\"");
-            }, false);
+            BuildActions();   // 操作区：自己画的图标卡片（Monitor.ActionsPanel.cs）
         }
         // ---- 找原因的工具（右键菜单和"选中的程序"里的按钮共用）----
         void AnalyzeSelected()

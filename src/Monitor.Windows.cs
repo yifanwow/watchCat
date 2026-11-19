@@ -47,7 +47,8 @@ namespace WatchDog
             snapFile = file; snapPick = pick;
             switch (kind)
             {
-                case "rules": ShowRulesWindow(); break;
+                case "rules": ShowRulesWindow(null); break;
+                case "fixes": ShowFixesWindow(); break;
                 case "fixlog": ShowFixLogWindow(); break;
                 case "ignored": ShowIgnoredWindow(); break;
                 case "ask": Ask("将结束 lghub_agent（1 个进程）并重新打开：\nC:\\Program Files\\LGHUB\\lghub_agent.exe\n\n这个程序里没保存的内容可能会丢失。确定吗？"); break;
@@ -220,7 +221,7 @@ namespace WatchDog
             return o.Count == 0 ? "（这条规则没有设核对项）" : string.Join("；", o) + "。不对会补救一次（再启动服务 / 按原来的方式再启动程序）";
         }
 
-        void ShowRulesWindow()
+        void ShowRulesWindow(string pick)   // pick = 打开时选中的规则 id
         {
             rulesSig = ""; LoadRules();
             const int w = 1100, h = 750;
@@ -318,7 +319,8 @@ namespace WatchDog
                     log = ReadActionLog(); fill(); select();
                 };
                 fill();
-                if (snapPick != null) foreach (ListViewItem it in lv2.Items) if (((Rule)it.Tag).Id == snapPick) { it.Selected = true; cur = (Rule)it.Tag; }
+                pick = pick ?? snapPick;
+                if (pick != null) foreach (ListViewItem it in lv2.Items) if (((Rule)it.Tag).Id == pick) { it.Selected = true; it.EnsureVisible(); cur = (Rule)it.Tag; }
                 select();
                 f.ShowDialog(this);
             }
@@ -402,7 +404,7 @@ namespace WatchDog
                 l.DoubleClick += delegate { if (l.SelectedItems.Count > 0) { string fp = l.SelectedItems[0].Tag as string; if (fp != null && File.Exists(fp)) StartShell("notepad.exe", "\"" + fp + "\""); } };
                 if (items.Count == 0) l.Items.Add(new ListViewItem(new[] { "（还没有记录）", "", "看门狗只在程序超过上限、而且你空闲 10 分钟以上时才处理", "", "" }));
                 NewBtn(body, "打开日志文件", 22, h - 52, 150, delegate { if (File.Exists(LogFile)) StartShell("notepad.exe", "\"" + LogFile + "\""); }, false);
-                NewBtn(body, "规则", 180, h - 52, 100, delegate { f.Close(); ShowRulesWindow(); }, false);
+                NewBtn(body, "规则", 180, h - 52, 100, delegate { f.Close(); ShowRulesWindow(null); }, false);
                 NewBtn(body, "关闭", w - 22 - 100, h - 52, 100, delegate { f.Close(); }, false);
                 f.ShowDialog(this);
             }

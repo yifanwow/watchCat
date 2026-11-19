@@ -67,7 +67,6 @@ namespace WatchDog
             DateTime now = DateTime.Now, nowU = DateTime.UtcNow;
             if (now >= forceSlowAt) { forceSlowAt = DateTime.MaxValue; lastSlow = DateTime.MinValue; histSig = ""; rulesSig = ""; ignoreSig = -1; }
             if ((now - lastSlow).TotalSeconds >= 60) { lastSlow = now; UpdateSlow(); }
-            SetText(btnInstall, taskInstalled ? "卸载看门狗" : "安装看门狗");
 
             // 内存
             Native.MEMSTAT m = Native.Mem();
@@ -196,8 +195,7 @@ namespace WatchDog
             finally { updating = false; }
             FitColumns();
             UpdateDetailButtons();
-            int nIg = ActiveIgnores().Count;
-            SetText(btnIgnored, nIg > 0 ? "已忽略的问题（" + nIg + "）" : "已忽略的问题");
+            UpdateActionInfo();
 
             UpdateDiskInfo();
             header.Invalidate(); status.Invalidate(); profile.Invalidate(); chart.Invalidate(); detail.Invalidate();
@@ -388,15 +386,7 @@ namespace WatchDog
         // 一键修复：所有命中规则且有修复方法的问题 + 没有规则但疑似泄漏的程序（重启它）
         void FixAll()
         {
-            List<KeyValuePair<string, object>> todo = new List<KeyValuePair<string, object>>(); HashSet<string> seen = new HashSet<string>();
-            foreach (Hit h in hits)
-                if (h.Rule.FixType != "none" && !seen.Contains(h.Target ?? "")) { todo.Add(new KeyValuePair<string, object>(h.Rule.FixLabel, h)); seen.Add(h.Target ?? ""); }
-            foreach (ProcRow r in rows.Values)
-            {
-                if (seen.Contains(r.Name) || Protected.Contains(r.Name)) continue;
-                Rating rt; if (ratings.TryGetValue(r.Name, out rt) && (rt.Text == "疑似泄漏" || rt.Text == "持续泄漏") && rt.Level >= 2) { todo.Add(new KeyValuePair<string, object>("重启 " + r.Name + "（" + rt.Text + "）", r.Name)); seen.Add(r.Name); continue; }
-                if (ResLevel(r.Name) >= 2 && !r.Name.StartsWith("svc:")) { todo.Add(new KeyValuePair<string, object>("重启 " + r.Name + "（句柄 / 图形资源）", r.Name)); seen.Add(r.Name); }
-            }
+            List<KeyValuePair<string, object>> todo = FixTodo();
             if (todo.Count == 0) { Say("现在没有需要修复的问题。"); return; }
             if (!Ask("将依次执行：\n\n  " + string.Join("\n  ", todo.Select(t => t.Key)) + "\n\n相关程序里没保存的内容可能会丢失；部分操作需要管理员权限。确定吗？")) return;
             int ok = 0;

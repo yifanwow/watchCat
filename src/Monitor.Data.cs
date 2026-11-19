@@ -441,7 +441,7 @@ namespace WatchDog
             }
             catch { }
             Dictionary<string, double?> fm = new Dictionary<string, double?>(StringComparer.OrdinalIgnoreCase);
-            foreach (Rule r in rules)
+            foreach (Rule r in allRules)   // 关掉的规则也读（专项修复窗口要显示）
                 if (r.File != null && !fm.ContainsKey(r.File))
                 {
                     try { fm[r.File] = File.Exists(r.File) ? (double?)(new FileInfo(r.File).Length / 1048576.0) : null; } catch { fm[r.File] = null; }

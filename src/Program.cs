@@ -145,7 +145,7 @@ namespace WatchDog
                         }
                     }
                     if (snapshot != null) Snapshot(form, snapshot, bmp);
-                    // --window rules|fixlog|ignored|ask|prompt --winsnap x.png [--pick 规则id]：打开子窗口截图
+                    // --window rules|fixes|fixlog|ignored|ask|prompt --winsnap x.png [--pick 规则id]：打开子窗口截图
                     if (a.ContainsKey("window")) form.SnapWindow(Get(a, "window", ""), Get(a, "winsnap", "window.png"), Get(a, "pick", null));
                     form.Report(outp);
                     outp.AppendLine("--- 自身资源 ---");
