@@ -118,6 +118,7 @@ namespace WatchDog
         List<Rule> allRules = new List<Rule>();          // 规则窗口里显示的：全部，含关掉的
         Dictionary<string, Rule> sharedRules = new Dictionary<string, Rule>();   // rules.json 里的原样（"恢复默认"用）
         Dictionary<string, Rule> watched = new Dictionary<string, Rule>();
+        Dictionary<string, Rule> guarded = new Dictionary<string, Rule>(StringComparer.OrdinalIgnoreCase);   // 程序名 -> 管它的规则（专项修复）
         Dictionary<string, double?> fileMB = new Dictionary<string, double?>();
         List<Hit> hits = new List<Hit>();
         Dictionary<string, Hit> hitByTarget = new Dictionary<string, Hit>();
@@ -396,6 +397,13 @@ namespace WatchDog
             Dictionary<string, Rule> w = new Dictionary<string, Rule>();
             foreach (Rule r in all) if (r.Id.StartsWith("watch-") && r.Process != null) w[r.Process] = r;
             watched = w;
+            // 看门狗在管的程序（启用、有修复方法的规则）：列表里名字旁边画盾牌
+            Dictionary<string, Rule> gd = new Dictionary<string, Rule>(StringComparer.OrdinalIgnoreCase);
+            foreach (Rule r in all)
+                if (r.FixType != "none")
+                    foreach (string n in new[] { r.Process, r.Target })
+                        if (n != null && (!gd.ContainsKey(n) || (r.MinMB > 0 && gd[n].MinMB == 0))) gd[n] = r;
+            guarded = gd;
         }
 
         // 每分钟一次：规则、忽略设置、历史数据、服务进程号、计划任务状态、最近动作、规则里的文件大小、清理过期的实时数据
@@ -729,6 +737,22 @@ namespace WatchDog
             return string.Format("{0:N0} 天前", m / 1440.0);
         }
 
+        static string ServiceExe(string svc)
+        {
+            try
+            {
+                using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey("SYSTEM\\CurrentControlSet\\Services\\" + svc))
+                {
+                    string p = k == null ? null : Environment.ExpandEnvironmentVariables(Convert.ToString(k.GetValue("ImagePath")));
+                    if (string.IsNullOrEmpty(p)) return null;
+                    p = p.Trim();
+                    if (p.StartsWith("\"")) { int e = p.IndexOf('"', 1); p = e > 0 ? p.Substring(1, e - 1) : p.Trim('"'); }
+                    else { int e = p.IndexOf(".exe", StringComparison.OrdinalIgnoreCase); if (e > 0) p = p.Substring(0, e + 4); }
+                    return p.IndexOf("svchost.exe", StringComparison.OrdinalIgnoreCase) >= 0 ? null : p;
+                }
+            }
+            catch { return null; }
+        }
         Bitmap GetIcon(string name)
         {
             Bitmap bmp;
@@ -740,9 +764,15 @@ namespace WatchDog
             }
             bmp = null;
             ProcRow r;
-            if (rows.TryGetValue(name, out r) && !name.StartsWith("svc:"))
+            if (!name.StartsWith("svc:") && !rows.ContainsKey(name)) return null;   // 没在运行：先不缓存，等它运行了再取
+            string path = null;
+            if (name.StartsWith("svc:")) path = ServiceExe(name.Substring(4));   // 服务：用注册表里登记的程序（svchost 里的服务没有自己的图标）
+            else if (rows.TryGetValue(name, out r))
             {
-                string path = Native.ImagePath(r.Pid);
+                path = Native.ImagePath(r.Pid);
+                if (path == null) { string sv = Native.ServiceOfPid(r.Pid); if (sv != null) path = ServiceExe(sv); }   // 以 SYSTEM 运行的服务进程（拿不到路径）：按服务查
+            }
+            {
                 if (path != null && File.Exists(path))
                     try { using (Icon ico = Icon.ExtractAssociatedIcon(path)) bmp = ico.ToBitmap(); }   // 图标句柄立即释放，只留位图
                     catch { bmp = null; }

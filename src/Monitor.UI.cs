@@ -576,7 +576,8 @@ namespace WatchDog
             Txt(g, name, fCNbig, cCyan, 56, 36, w - 70, 22);
             string sub = (HasNote(name) ? "✎ " : "") + (DescOf(name) ?? "-") + (r.Count > 1 ? " · " + r.Count + " 个进程" : "");
             Rule wr;
-            if (watched.TryGetValue(name, out wr)) sub += string.Format("  ·  ◉ 看门狗监控中（超过 {0} MB {1}）", wr.MinMB, wr.Auto ? "自动重启" : "提醒");
+            if (guarded.TryGetValue(name, out wr) && wr.MinMB > 0) sub += string.Format("  ·  看门狗在管：超过 {0:N0} MB {1}", wr.MinMB, wr.Auto && wr.FixType != "none" ? "且空闲时自动处理" : "时提醒");
+            else if (watched.TryGetValue(name, out wr)) sub += string.Format("  ·  ◉ 看门狗监控中（超过 {0} MB {1}）", wr.MinMB, wr.Auto ? "自动重启" : "提醒");
             Txt(g, sub, fCN, cGray, 56, 58, w - 70, 18);
             Issue ri; resIssues.TryGetValue(name, out ri);
             string[,] cols = { { "内存", string.Format("{0:N0} MB", r.PrivMB) }, { "CPU", string.Format("{0:N1}%", r.CpuPct) }, { "读写", string.Format("{0:N1} MB/s", r.IoMBs) },
@@ -720,7 +721,16 @@ namespace WatchDog
                 if (icon != null) g.DrawImage(icon, r.X + 8, r.Y + 5, 18, 18); else g.FillRectangle(bDim, r.X + 11, r.Y + 8, 12, 12);
                 if (it.Selected) g.FillRectangle(bLv[0], r.X, r.Y + 3, 3, r.Height - 6);
                 int tw = r.Width - 40;
-                if (watched.ContainsKey(it.Text)) { Txt(g, "◉", fCN, cCyan, r.Right - 20, r.Y, 16, r.Height); tw -= 18; }
+                Rule gr;
+                if (guarded.TryGetValue(it.Text, out gr))
+                {
+                    // 看门狗在管（有专项修复）：名字右边一个盾牌（蓝 = 自动处理，黄 = 只提醒），左边一道细线
+                    bool au = gr.Auto && gr.FixType != "none";
+                    if (!it.Selected) g.FillRectangle(au ? bLv[0] : bLv[1], r.X, r.Y + 6, 2, r.Height - 12);
+                    Txt(g, "\uEA18", fIcon, au ? cCyan : cYellow, r.Right - 22, r.Y, 18, r.Height, tfC);
+                    tw -= 20;
+                }
+                else if (watched.ContainsKey(it.Text)) { Txt(g, "◉", fCN, cCyan, r.Right - 20, r.Y, 16, r.Height); tw -= 18; }
                 Txt(g, it.Text, fCNb, cText, r.X + 34, r.Y, tw, r.Height);
                 return;
             }
@@ -754,7 +764,30 @@ namespace WatchDog
             for (int i = 0; i < n; i++) { ln.T[i] = time(items[i]).ToUniversalTime().Ticks; ln.V[i] = val(items[i]); }
             return ln;
         }
+        // 长时间范围：看门狗的记录（10 分钟 / 1 小时一个点）后面接上窗口的实时数据（5 秒一个点），最右边一直是现在
+        static Line Join(Line h, Line live)
+        {
+            if (live == null) return h;
+            if (h == null) return live;
+            long last = h.T[h.T.Length - 1];
+            int k = Array.FindIndex(live.T, t => t > last);
+            if (k < 0) return h;
+            int n = h.T.Length, m = live.T.Length - k;
+            Line o = new Line(); o.Level = h.Level; o.Name = h.Name; o.Right = h.Right;
+            o.T = new long[n + m]; o.V = new double[n + m];
+            Array.Copy(h.T, o.T, n); Array.Copy(h.V, o.V, n);
+            Array.Copy(live.T, k, o.T, n, m); Array.Copy(live.V, k, o.V, n, m);
+            return o;
+        }
+        static Line Scale(Line l, Func<double, double> f) { if (l != null) for (int i = 0; i < l.V.Length; i++) l.V[i] = f(l.V[i]); return l; }
         ChartData GetChartData(string range)
+        {
+            ChartData d = GetChartData0(range);
+            if (RangeHours[range] > 1 && d.Lines.Count > 0 && d.Note.Length > 0 && !d.Note.StartsWith("窗口打开期间") && !d.Note.StartsWith("看门狗做什么"))
+                d.Note += " · 最近一段接窗口的实时数据（5 秒一个点）";
+            return d;
+        }
+        ChartData GetChartData0(string range)
         {
             bool lng = RangeHours[range] > 1;   // 1 小时以内用窗口的实时数据（5 秒一个点），更长用看门狗的记录（10 分钟一个点）
             bool week = range == "7d";          // 7 天：看门狗记录按小时汇总（每小时一个点）
@@ -767,25 +800,26 @@ namespace WatchDog
             {
                 case "mem":
                     d.Title = "整机内存占用"; d.Unit = "GB"; d.Note = lng ? rec : live;
-                    d.Lines.Add(lng ? HistLine(sys, x => x.T, x => x.UsedMB / 1024, 0, "已用") : RingLine("sys:mem", 0, "已用"));
+                    d.Lines.Add(lng ? Join(HistLine(sys, x => x.T, x => x.UsedMB / 1024, 0, "已用"), RingLine("sys:mem", 0, "已用")) : RingLine("sys:mem", 0, "已用"));
                     if (memPct)
                     {
                         // 黄色线：占总内存的百分比，用右侧固定的 0–100% 刻度，一眼看出离满还有多远
                         double totalGB = Native.Mem().ullTotalPhys / 1073741824.0;
-                        Line pl = lng ? HistLine(sys, x => x.T, x => x.UsedMB / 1024 / totalGB * 100, 1, "占比") : RingLine("sys:mem", 1, "占比");
-                        if (pl != null) { if (!lng) for (int i = 0; i < pl.V.Length; i++) pl.V[i] = pl.V[i] / totalGB * 100; pl.Right = true; d.Lines.Add(pl); }
+                        Line livePct = Scale(RingLine("sys:mem", 1, "占比"), v => v / totalGB * 100);
+                        Line pl = lng ? Join(HistLine(sys, x => x.T, x => x.UsedMB / 1024 / totalGB * 100, 1, "占比"), livePct) : livePct;
+                        if (pl != null) { pl.Right = true; d.Lines.Add(pl); }
                     }
                     break;
                 case "cpu":
                     d.Title = "CPU 占用"; d.Unit = "%"; d.FixedMax = 100; d.Note = lng ? inst : live;
-                    d.Lines.Add(lng ? HistLine(sys, x => x.T, x => x.CpuPct, 0, "CPU") : RingLine("sys:cpu", 0, "CPU"));
+                    d.Lines.Add(lng ? Join(HistLine(sys, x => x.T, x => x.CpuPct, 0, "CPU"), RingLine("sys:cpu", 0, "CPU")) : RingLine("sys:cpu", 0, "CPU"));
                     break;
                 case "disk":
                     d.Title = "磁盘读写"; d.Unit = "MB/s"; d.Note = lng ? inst : live;
                     if (lng)
                     {
                         List<SysRow> v2 = sys.Where(x => x.HasDisk).ToList();
-                        d.Lines.Add(HistLine(v2, x => x.T, x => x.DiskR, 0, "读")); d.Lines.Add(HistLine(v2, x => x.T, x => x.DiskW, 1, "写"));
+                        d.Lines.Add(Join(HistLine(v2, x => x.T, x => x.DiskR, 0, "读"), RingLine("sys:dr", 0, "读"))); d.Lines.Add(Join(HistLine(v2, x => x.T, x => x.DiskW, 1, "写"), RingLine("sys:dw", 1, "写")));
                     }
                     else { d.Lines.Add(RingLine("sys:dr", 0, "读")); d.Lines.Add(RingLine("sys:dw", 1, "写")); }
                     break;
@@ -801,14 +835,13 @@ namespace WatchDog
                         if (kernelMetric == "total")
                         {
                             d.Title = "全系统句柄总数"; d.Unit = "万"; d.Note = lng ? rec : live;
-                            Line hl2 = lng ? HistLine(k, x => x.T, x => x.Handles / 10000, 0, "句柄") : RingLine("sys:hnd", 0, "句柄");
-                            if (!lng && hl2 != null) for (int i = 0; i < hl2.V.Length; i++) hl2.V[i] /= 10000;
-                            d.Lines.Add(hl2);
+                            Line liveH = Scale(RingLine("sys:hnd", 0, "句柄"), v => v / 10000);
+                            d.Lines.Add(lng ? Join(HistLine(k, x => x.T, x => x.Handles / 10000, 0, "句柄"), liveH) : liveH);
                             break;
                         }
                         d.Title = "内核内存池（驱动用的内存）"; d.Unit = "MB"; d.Note = KernelNote();
-                        d.Lines.Add(lng ? HistLine(k, x => x.T, x => x.PoolP, 0, "分页池") : RingLine("sys:kp", 0, "分页池"));
-                        d.Lines.Add(lng ? HistLine(k, x => x.T, x => x.PoolN, 1, "非分页池") : RingLine("sys:kn", 1, "非分页池"));
+                        d.Lines.Add(lng ? Join(HistLine(k, x => x.T, x => x.PoolP, 0, "分页池"), RingLine("sys:kp", 0, "分页池")) : RingLine("sys:kp", 0, "分页池"));
+                        d.Lines.Add(lng ? Join(HistLine(k, x => x.T, x => x.PoolN, 1, "非分页池"), RingLine("sys:kn", 1, "非分页池")) : RingLine("sys:kn", 1, "非分页池"));
                         break;
                     }
                 default:
@@ -819,7 +852,7 @@ namespace WatchDog
                     {
                         d.Unit = "个"; List<HistPt> hh; histH.TryGetValue(selected, out hh);
                         if (lng && (hh == null || hh.Count < 2)) d.Msg = "看门狗只记录内存前 30 和句柄最多的 10 个程序的句柄数（从这个版本开始），这个程序还没有长期记录；请选\"30 分钟\"或\"1 小时\"。";
-                        d.Lines.Add(lng ? HistLine(hh, x => x.T, x => x.MB, 0, "句柄") : RingLine("hnd:" + selected, 0, "句柄"));
+                        d.Lines.Add(lng ? Join(HistLine(hh, x => x.T, x => x.MB, 0, "句柄"), RingLine("hnd:" + selected, 0, "句柄")) : RingLine("hnd:" + selected, 0, "句柄"));
                         break;
                     }
                     if (procMetric == "gui")
@@ -840,7 +873,7 @@ namespace WatchDog
                     }
                     d.Unit = "MB";
                     List<HistPt> hl; hist.TryGetValue(selected, out hl);
-                    d.Lines.Add(lng ? HistLine(hl, x => x.T, x => x.MB, 0, "内存") : RingLine(selected, 0, "内存"));
+                    d.Lines.Add(lng ? Join(HistLine(hl, x => x.T, x => x.MB, 0, "内存"), RingLine(selected, 0, "内存")) : RingLine(selected, 0, "内存"));
                     break;
             }
             d.Lines.RemoveAll(l => l == null);
@@ -994,7 +1027,7 @@ namespace WatchDog
             g.FillRectangle(bBg, 0, 0, w, h);
             g.DrawLine(pAccDim, 0, 0, w, 0);
             g.FillRectangle(bHaz, 12, 9, 22, 10);
-            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
+            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 名字旁的盾牌 = 看门狗在管（蓝 自动处理 / 黄 只提醒） · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
                 selfMB, selfCpu, selfGdi, series.Count);
             Txt(g, txt, fCN, cGray, 42, 0, w - 54, h);
         }

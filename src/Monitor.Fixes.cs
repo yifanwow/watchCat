@@ -173,12 +173,21 @@ namespace WatchDog
 
             // 标题 + 状态徽章
             string state = RuleState(r);
+            // 程序自己的图标（罗技 / 英伟达 / 海盗船 / Steam……）；拿不到（svchost 里的服务、没在运行）就画一个图标字
+            Rule sh; string iconOf = Json.Str(r.Raw, "icon") ?? (sharedRules.TryGetValue(r.Id, out sh) ? Json.Str(sh.Raw, "icon") : null);   // 规则可以借别的程序的图标（服务程序自己没有图标时，比如用 iCUE 的）
+            Bitmap ico = (iconOf != null ? GetIcon(iconOf) : null) ?? GetIcon(r.Process ?? r.Target ?? "");
+            Rectangle ib = new Rectangle(x, b.Y + 12, 40, 40);
+            g.FillRectangle(bDeep, ib);
+            if (ico != null) { g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic; g.DrawImage(ico, ib.X + 4, ib.Y + 4, 32, 32); }
+            else Txt(g, (r.Target ?? "").IndexOf("Audio", StringComparison.OrdinalIgnoreCase) >= 0 ? "\uE767" : "\uE90F", fIconBig, r.Disabled ? cGray : cCyan, ib.X, ib.Y, ib.Width, ib.Height, tfC);
+            x += 52; wIn -= 52;
             Txt(g, r.Title, fCNbig, r.Disabled ? cGray : cText, x, b.Y + 12, wIn - 100, 26);
             Badge(g, state, r.Disabled ? 3 : state == "自动处理" ? 0 : 1, b.Right - 18 - 90, b.Y + 14, 90, 22);
 
             // 程序名 · 什么时候动手
             string who = r.MinFileMB > 0 && r.File != null ? Path.GetFileName(r.File) : (r.Process ?? r.Target ?? "-");
-            Txt(g, who + "   ·   " + (r.Disabled ? "已关闭，不检查" : RuleIdle(r) + "才动手"), fCN, cGray, x, b.Y + 40, wIn, 18);
+            Txt(g, who + "   ·   " + (r.Disabled ? "已关闭，不检查" : RuleIdle(r) + "才动手"), fCN, cGray, x, b.Y + 38, wIn, 18);
+            x -= 52; wIn += 52;   // 下面几行和图标左对齐
 
             // 现在多大 / 上限：数字 + 条
             string val = has ? (cur >= 1024 ? (cur / 1024).ToString("0.0") : cur.ToString("0")) : "--";

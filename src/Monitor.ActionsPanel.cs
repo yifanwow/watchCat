@@ -148,7 +148,7 @@ namespace WatchDog
             tIgnored.Count = nIg > 0 ? nIg.ToString() : "";
             tReports.Count = incidents.Count > 0 ? incidents.Count.ToString() : "";
             tTask.IconColor = taskInstalled ? cCyan : cRed;
-            tTask.Label = taskInstalled ? "后台看门狗" : "安装看门狗";
+            tTask.Label = taskInstalled ? "取消看门狗" : "安装看门狗";
             tRules.Count = allRules.Count > 0 ? allRules.Count.ToString() : "";
 
             string sig = string.Join("|", actTiles.Select(t => t.Label + t.Sub + t.Count + t.SubColor.ToArgb() + t.IconColor.ToArgb())) + actLastFixColor.ToArgb();

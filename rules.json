@@ -55,6 +55,7 @@
   },
   {
     "id": "asus-aura",
+    "icon": "svc:ArmouryCrateService",
     "title": "华硕 Aura 灯效服务泄漏",
     "target": "svc:LightingService",
     "when": { "process": "svc:LightingService", "minMB": 400 },
@@ -66,6 +67,7 @@
   },
   {
     "id": "corsair-cpuid",
+    "icon": "iCUE",
     "title": "海盗船 iCUE CPU 信息服务泄漏",
     "target": "CorsairCpuIdService",
     "when": { "process": "CorsairCpuIdService", "minMB": 500 },
