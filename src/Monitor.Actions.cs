@@ -159,46 +159,58 @@ namespace WatchDog
             HashSet<string> inList = new HashSet<string>(list.Select(r => r.Name));
             foreach (ProcRow r in all)
                 if (!inList.Contains(r.Name) && (ratings[r.Name].Level >= 1 || ResLevel(r.Name) >= 1 || r.IoMBs >= HeavyIoMBs || watched.ContainsKey(r.Name))) { list.Add(r); inList.Add(r.Name); }
-            switch (sortMode)
-            {
-                case "mem": list = list.OrderByDescending(r => r.PrivMB).ToList(); break;
-                case "cpu": list = list.OrderByDescending(r => r.CpuPct).ToList(); break;
-                case "io": list = list.OrderByDescending(r => r.IoMBs).ToList(); break;
-                case "hnd": list = list.OrderByDescending(r => r.Handles).ToList(); break;
-                case "gui": list = list.OrderByDescending(r => r.Gdi + r.User).ToList(); break;
-                default: list = list.OrderByDescending(r => ratings[r.Name].Score + 45 * ResLevel(r.Name) + (r.IoMBs >= HeavyIoMBs ? 40 : 0)).ThenByDescending(r => r.PrivMB).ToList(); break;
-            }
+            // 看门狗专项修复在管的程序放到上面的"重点监控"小列表；同一个进程的服务名（svc:）和进程名只留进程名
+            List<ProcRow> top = all.Where(r => guarded.ContainsKey(r.Name)).ToList();
+            top = top.Where(r => !(r.Name.StartsWith("svc:") && top.Any(o => o != r && o.Pid == r.Pid && !o.Name.StartsWith("svc:")))).ToList();
+            list = SortRows(list.Where(r => !guarded.ContainsKey(r.Name)).ToList());
+            top = SortRows(top);
             // 原地更新列表（不清空重建）：只改变了的格子，滚动位置和选中都保留，不闪
             updating = true;
-            try
-            {
-                while (lv.Items.Count > list.Count) lv.Items.RemoveAt(lv.Items.Count - 1);
-                for (int i = 0; i < list.Count; i++)
-                {
-                    ProcRow r = list[i]; Rating rt = ratings[r.Name];
-                    ListViewItem it;
-                    if (i < lv.Items.Count) it = lv.Items[i];
-                    else { it = new ListViewItem(""); for (int k = 1; k < ColCount; k++) it.SubItems.Add(""); lv.Items.Add(it); }
-                    string desc = DescOf(r.Name);
-                    Issue ri; resIssues.TryGetValue(r.Name, out ri);
-                    // 稳定性看内存；句柄 / 图形资源有问题时，"判断"一栏显示那个问题
-                    int lvRow = Math.Max(rt.Level, ri != null ? ri.Level : -1);
-                    string judge = ri != null && ri.Level >= rt.Level ? ShortTitle(ri, r.Name) : rt.Forecast.Length > 0 ? rt.Forecast : rt.Note;
-                    string[] vals = { r.Name, desc ?? "", string.Format("{0:N0}", r.PrivMB), string.Format("{0:N1}", r.CpuPct), string.Format("{0:N1}", r.IoMBs),
-                        string.Format("{0:N0}", r.Handles), r.Gdi + r.User > 0 ? r.Gdi + "/" + r.User : "-", rt.Text, rt.Trend, judge };
-                    for (int k = 0; k < ColCount; k++) if (it.SubItems[k].Text != vals[k]) it.SubItems[k].Text = vals[k];
-                    if (!(it.Tag is int) || (int)it.Tag != lvRow) { it.Tag = lvRow; lv.Invalidate(it.Bounds); }
-                    bool sel = r.Name == selected;
-                    if (it.Selected != sel) it.Selected = sel;
-                }
-            }
+            try { FillList(lvG, top); FillList(lv, list); }
             finally { updating = false; }
+            LayoutWatchBox(top.Count);
             FitColumns();
             UpdateDetailButtons();
             UpdateActionInfo();
 
             UpdateDiskInfo();
             header.Invalidate(); status.Invalidate(); profile.Invalidate(); chart.Invalidate(); detail.Invalidate();
+        }
+
+        List<ProcRow> SortRows(List<ProcRow> list)
+        {
+            switch (sortMode)
+            {
+                case "mem": return list.OrderByDescending(r => r.PrivMB).ToList();
+                case "cpu": return list.OrderByDescending(r => r.CpuPct).ToList();
+                case "io": return list.OrderByDescending(r => r.IoMBs).ToList();
+                case "hnd": return list.OrderByDescending(r => r.Handles).ToList();
+                case "gui": return list.OrderByDescending(r => r.Gdi + r.User).ToList();
+                default: return list.OrderByDescending(r => ratings[r.Name].Score + 45 * ResLevel(r.Name) + (r.IoMBs >= HeavyIoMBs ? 40 : 0)).ThenByDescending(r => r.PrivMB).ToList();
+            }
+        }
+        // 原地更新列表（不清空重建）：只改变了的格子，滚动位置和选中都保留，不闪
+        void FillList(ListView l, List<ProcRow> list)
+        {
+            while (l.Items.Count > list.Count) l.Items.RemoveAt(l.Items.Count - 1);
+            for (int i = 0; i < list.Count; i++)
+            {
+                ProcRow r = list[i]; Rating rt = ratings[r.Name];
+                ListViewItem it;
+                if (i < l.Items.Count) it = l.Items[i];
+                else { it = new ListViewItem(""); for (int k = 1; k < ColCount; k++) it.SubItems.Add(""); l.Items.Add(it); }
+                string desc = DescOf(r.Name);
+                Issue ri; resIssues.TryGetValue(r.Name, out ri);
+                // 稳定性看内存；句柄 / 图形资源有问题时，"判断"一栏显示那个问题
+                int lvRow = Math.Max(rt.Level, ri != null ? ri.Level : -1);
+                string judge = ri != null && ri.Level >= rt.Level ? ShortTitle(ri, r.Name) : rt.Forecast.Length > 0 ? rt.Forecast : rt.Note;
+                string[] vals = { r.Name, desc ?? "", string.Format("{0:N0}", r.PrivMB), string.Format("{0:N1}", r.CpuPct), string.Format("{0:N1}", r.IoMBs),
+                    string.Format("{0:N0}", r.Handles), r.Gdi + r.User > 0 ? r.Gdi + "/" + r.User : "-", rt.Text, rt.Trend, judge };
+                for (int k = 0; k < ColCount; k++) if (it.SubItems[k].Text != vals[k]) it.SubItems[k].Text = vals[k];
+                if (!(it.Tag is int) || (int)it.Tag != lvRow) { it.Tag = lvRow; l.Invalidate(it.Bounds); }
+                bool sel = r.Name == selected;
+                if (it.Selected != sel) it.Selected = sel;
+            }
         }
 
         // 体检结论：规则命中 + 稳定性问题 + 大量读写
@@ -292,7 +304,7 @@ namespace WatchDog
         {
             selected = name;
             updating = true;
-            try { foreach (ListViewItem it in lv.Items) { bool sel = it.Text == name; if (it.Selected != sel) it.Selected = sel; if (sel) it.EnsureVisible(); } }
+            try { foreach (ListView l in new ListView[] { lvG, lv }) foreach (ListViewItem it in l.Items) { bool sel = it.Text == name; if (it.Selected != sel) it.Selected = sel; if (sel) it.EnsureVisible(); } }
             finally { updating = false; }
             UpdateDetailButtons(); SetChartMode("proc"); detail.Invalidate();
         }

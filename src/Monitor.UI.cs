@@ -121,7 +121,9 @@ namespace WatchDog
         BufferedPanel[] cardList;
         CardData dog = new CardData { Tag = "WATCHDOG", Title = "看门狗", Mode = "dog" };   // 画在体检结论的上半部分
         const int DogY = 34, DogH = 88;
-        BufferedListView lv;
+        BufferedListView lv, lvG;      // lvG：上面的"重点监控"小列表（看门狗专项修复在管的程序）
+        Panel watchBox; BufferedPanel watchHead; int watchHdrH = 26, watchRowH = 28;
+        Dictionary<int, Bitmap> shieldBmp = new Dictionary<int, Bitmap>();
         ImageList rowH;
         ContextMenuStrip menu, trayMenu;
         ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote, menuCapture, menuIncident, menuAnalyze;
@@ -154,7 +156,9 @@ namespace WatchDog
         {
             Text = "WATCHDOG // 内存 · CPU · 磁盘 监控";
             Rectangle wa = Screen.PrimaryScreen.WorkingArea;   // 屏幕够高就开高一点，右侧栏更宽松
-            Size = new Size(Math.Min(1480, wa.Width), Math.Max(920, Math.Min(1060, wa.Height))); MinimumSize = new Size(1150, 920);
+            // 最小尺寸 1451 × 1029：在 2K 屏上实测再小就会挤（右侧栏、重点监控列表显示不全）。屏幕本身更小时以屏幕为准
+            Size minS = new Size(Math.Min(1451, wa.Width), Math.Min(1029, wa.Height));
+            Size = new Size(Math.Max(minS.Width, Math.Min(1480, wa.Width)), Math.Max(minS.Height, Math.Min(1060, wa.Height))); MinimumSize = minS;
             StartPosition = FormStartPosition.CenterScreen;
             Font = fCN; BackColor = cBg; ForeColor = cText;
             try { formIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); Icon = formIcon; } catch { }
@@ -217,6 +221,7 @@ namespace WatchDog
             chart = new BufferedPanel(); chart.Dock = DockStyle.Top; chart.Height = 210;   // 走势图在列表上方
             chart.Paint += PaintChart; chart.MouseClick += ChartClick;
             main.Controls.Add(lv);
+            main.Controls.Add(watchBox);
             main.Controls.Add(Spacer(8));
             main.Controls.Add(chart);
             main.Controls.Add(Spacer(10));
@@ -661,7 +666,96 @@ namespace WatchDog
         // ---------- 程序列表 ----------
         void BuildList()
         {
-            lv = new BufferedListView();
+            lv = NewProcList();
+            lvG = NewProcList();
+            watchHead = new BufferedPanel(); watchHead.Dock = DockStyle.Top; watchHead.Height = 32; watchHead.Paint += PaintWatchHead;
+            watchBox = new Panel(); watchBox.Dock = DockStyle.Top; watchBox.Height = 0; watchBox.Visible = false; watchBox.BackColor = cBg; watchBox.Padding = new Padding(0, 0, 0, 10);
+            watchBox.Controls.Add(lvG); watchBox.Controls.Add(watchHead); lvG.BringToFront();
+            // 两个列表的列宽保持一致（拖动其中一个的列宽，另一个跟着变）
+            bool syncing = false;
+            foreach (BufferedListView a in new[] { lv, lvG })
+            {
+                BufferedListView src = a, dst = a == lv ? lvG : lv;
+                src.ColumnWidthChanged += delegate(object s, ColumnWidthChangedEventArgs e)
+                {
+                    if (syncing || e.ColumnIndex >= src.Columns.Count - 1) return;
+                    syncing = true;
+                    try { if (dst.Columns[e.ColumnIndex].Width != src.Columns[e.ColumnIndex].Width) dst.Columns[e.ColumnIndex].Width = src.Columns[e.ColumnIndex].Width; FitColumns(); }
+                    finally { syncing = false; }
+                };
+            }
+        }
+        // 重点监控小列表：标题条 + 列表高度跟着程序个数走（最多显示 8 行，再多就滚动）
+        void LayoutWatchBox(int n)
+        {
+            // 标题高度、行高按列表实际量出来的算（字体 / DPI 不同时不会多出空白或滚动条）
+            try
+            {
+                if (lvG.Items.Count > 0 && lvG.TopItem == lvG.Items[0] && lvG.Items[0].Bounds.Top > 10)
+                { watchHdrH = lvG.Items[0].Bounds.Top; watchRowH = lvG.Items[0].Bounds.Height; }
+            }
+            catch { }
+            bool vis = n > 0;
+            int want = vis ? watchHead.Height + watchHdrH + Math.Min(n, 8) * watchRowH + 2 + watchBox.Padding.Bottom : 0;
+            if (watchBox.Visible != vis) watchBox.Visible = vis;
+            if (watchBox.Height != want) watchBox.Height = want;
+            watchHead.Invalidate();
+        }
+        void PaintWatchHead(object s, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics; int w = watchHead.Width, h = watchHead.Height;
+            g.FillRectangle(bBg, 0, 0, w, h);
+            g.DrawImage(Shield(true, 24), 0, 3);
+            Txt(g, "重点监控", fCNbig, cText, 30, 0, 100, h - 4);
+            int x = 30 + TextRenderer.MeasureText("重点监控", fCNbig).Width + 4;
+            Txt(g, "// WATCHLIST  看门狗专项修复盯着的程序，出问题会被处理", fCN, cGray, x, 2, w - x - 330, h - 4);
+            int n = lvG.Items.Count, au = 0;
+            foreach (ListViewItem it in lvG.Items) { Rule r; if (guarded.TryGetValue(it.Text, out r) && r.Auto) au++; }
+            Txt(g, string.Format("{0} 个程序 · 红 = 超上限且空闲时自动处理 {1} · 黄 = 只提醒 {2}", n, au, n - au), fCN, cGray, w - 330, 2, 330, h - 4, tfR);
+            g.FillRectangle(bDimLine, 0, h - 2, w, 1);
+            g.FillRectangle(bLv[Lx(2)], 0, h - 3, 118, 3);
+        }
+        // 重点监控的标记：盾牌 + 交叉的两根骨头（看门狗盯着的"危险分子"）。红边 = 自动处理，黄边 = 只提醒。画一次缓存起来
+        Bitmap Shield(bool auto, int s)
+        {
+            Bitmap b; int key = s * 2 + (auto ? 1 : 0);
+            if (shieldBmp.TryGetValue(key, out b)) return b;
+            b = Keep(new Bitmap(s, s));
+            using (Graphics g = Graphics.FromImage(b))
+            using (GraphicsPath p = new GraphicsPath())
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                float l = s * 0.1f, r = s * 0.9f, t = s * 0.06f, sh = s * 0.14f, mid = s * 0.5f, bot = s * 0.96f;
+                p.AddLine(l, t + sh, mid, t); p.AddLine(mid, t, r, t + sh); p.AddLine(r, t + sh, r, s * 0.5f);
+                p.AddBezier(r, s * 0.5f, r, s * 0.74f, mid + s * 0.16f, s * 0.86f, mid, bot);
+                p.AddBezier(mid, bot, mid - s * 0.16f, s * 0.86f, l, s * 0.74f, l, s * 0.5f);
+                p.CloseFigure();
+                Color edge = auto ? cRed : cYellow;
+                using (SolidBrush f = new SolidBrush(auto ? Color.FromArgb(96, 10, 18) : Color.FromArgb(70, 54, 6))) g.FillPath(f, p);
+                using (Pen pe = new Pen(edge, Math.Max(1.3f, s / 13f))) g.DrawPath(pe, p);
+                Color bone = Color.FromArgb(244, 236, 218);
+                float bw = Math.Max(1.5f, s * 0.09f), kr = Math.Max(1.15f, s * 0.065f);
+                float x0 = s * 0.31f, x1 = s * 0.69f, y0 = s * 0.31f, y1 = s * 0.71f;
+                using (Pen bp = new Pen(bone, bw)) using (SolidBrush bb = new SolidBrush(bone))
+                { Bone(g, bp, bb, x0, y0, x1, y1, kr); Bone(g, bp, bb, x1, y0, x0, y1, kr); }
+            }
+            shieldBmp[key] = b;
+            return b;
+        }
+        static void Bone(Graphics g, Pen p, Brush b, float x0, float y0, float x1, float y1, float kr)
+        {
+            g.DrawLine(p, x0, y0, x1, y1);
+            float dx = x1 - x0, dy = y1 - y0, len = (float)Math.Sqrt(dx * dx + dy * dy);
+            float px = -dy / len * kr * 0.85f, py = dx / len * kr * 0.85f;
+            foreach (PointF e in new[] { new PointF(x0, y0), new PointF(x1, y1) })
+            {
+                g.FillEllipse(b, e.X + px - kr, e.Y + py - kr, 2 * kr, 2 * kr);
+                g.FillEllipse(b, e.X - px - kr, e.Y - py - kr, 2 * kr, 2 * kr);
+            }
+        }
+        BufferedListView NewProcList()
+        {
+            BufferedListView lv = new BufferedListView();
             lv.Dock = DockStyle.Fill; lv.View = View.Details; lv.FullRowSelect = true; lv.HideSelection = false; lv.MultiSelect = false;
             lv.OwnerDraw = true; lv.BackColor = cRowA; lv.ForeColor = cText; lv.BorderStyle = BorderStyle.None;
             rowH = new ImageList(); rowH.ImageSize = new Size(1, 28); lv.SmallImageList = rowH;
@@ -685,10 +779,14 @@ namespace WatchDog
             lv.ColumnClick += delegate(object s, ColumnClickEventArgs e)
             {
                 sortMode = e.Column == 2 ? "mem" : e.Column == 3 ? "cpu" : e.Column == 4 ? "io" : e.Column == 5 ? "hnd" : e.Column == 6 ? "gui" : "issue";
-                RefreshAll(); lv.Invalidate();
-                // 列标题是单独的子窗口，lv.Invalidate() 不会重画它，旧的排序标记会留着：手动让它整个重画
-                IntPtr hdr = Native.SendMessage(lv.Handle, 0x101F, IntPtr.Zero, IntPtr.Zero);   // LVM_GETHEADER
-                if (hdr != IntPtr.Zero) Native.InvalidateRect(hdr, IntPtr.Zero, true);
+                RefreshAll();
+                // 列标题是单独的子窗口，Invalidate() 不会重画它，旧的排序标记会留着：两个列表的标题都手动整个重画
+                foreach (BufferedListView l in new[] { this.lv, lvG })
+                {
+                    l.Invalidate();
+                    IntPtr hdr = Native.SendMessage(l.Handle, 0x101F, IntPtr.Zero, IntPtr.Zero);   // LVM_GETHEADER
+                    if (hdr != IntPtr.Zero) Native.InvalidateRect(hdr, IntPtr.Zero, true);
+                }
             };
             lv.DrawItem += delegate { };
             lv.DrawSubItem += DrawSubItem;
@@ -698,7 +796,16 @@ namespace WatchDog
             lv.SelectedIndexChanged += delegate
             {
                 if (updating) return;
-                if (lv.SelectedItems.Count > 0) { selected = lv.SelectedItems[0].Text; UpdateDetailButtons(); SetChartMode("proc"); detail.Invalidate(); }
+                if (lv.SelectedItems.Count > 0)
+                {
+                    selected = lv.SelectedItems[0].Text;
+                    // 两个列表只能有一个选中：取消另一个列表里的选中
+                    BufferedListView o = lv == this.lv ? lvG : this.lv;
+                    updating = true;
+                    try { foreach (ListViewItem x in o.SelectedItems.Cast<ListViewItem>().ToList()) { x.Selected = false; o.Invalidate(x.Bounds); } }
+                    finally { updating = false; }
+                    UpdateDetailButtons(); SetChartMode("proc"); detail.Invalidate();
+                }
             };
             lv.HandleCreated += delegate
             {
@@ -706,6 +813,7 @@ namespace WatchDog
                 IntPtr hdr = Native.SendMessage(lv.Handle, 0x101F, IntPtr.Zero, IntPtr.Zero);   // LVM_GETHEADER
                 if (hdr != IntPtr.Zero) Native.SetWindowTheme(hdr, "DarkMode_ItemsView", null);
             };
+            return lv;
         }
         void DrawSubItem(object s, DrawListViewSubItemEventArgs e)
         {
@@ -724,11 +832,11 @@ namespace WatchDog
                 Rule gr;
                 if (guarded.TryGetValue(it.Text, out gr))
                 {
-                    // 看门狗在管（有专项修复）：名字右边一个盾牌（蓝 = 自动处理，黄 = 只提醒），左边一道细线
+                    // 重点监控（看门狗专项修复在管）：名字右边一个交叉骨头的盾牌（红 = 自动处理，黄 = 只提醒），左边一道细线
                     bool au = gr.Auto && gr.FixType != "none";
-                    if (!it.Selected) g.FillRectangle(au ? bLv[0] : bLv[1], r.X, r.Y + 6, 2, r.Height - 12);
-                    Txt(g, "\uEA18", fIcon, au ? cCyan : cYellow, r.Right - 22, r.Y, 18, r.Height, tfC);
-                    tw -= 20;
+                    if (!it.Selected) g.FillRectangle(au ? bLv[Lx(2)] : bLv[1], r.X, r.Y + 6, 2, r.Height - 12);
+                    g.DrawImage(Shield(au, 18), r.Right - 22, r.Y + (r.Height - 18) / 2);
+                    tw -= 22;
                 }
                 else if (watched.ContainsKey(it.Text)) { Txt(g, "◉", fCN, cCyan, r.Right - 20, r.Y, 16, r.Height); tw -= 18; }
                 Txt(g, it.Text, fCNb, cText, r.X + 34, r.Y, tw, r.Height);
@@ -740,7 +848,8 @@ namespace WatchDog
                 : col == 5 || col == 6 ? (rl >= 1 ? LevelColor(rl) : cGray) : col == 7 ? LevelColor(ml) : col == 9 ? (lvl >= 1 ? LevelColor(lvl) : cGray) : cText;
             Txt(g, e.SubItem.Text, col == 7 ? fCNb : fCN, c, r.X + 8, r.Y, r.Width - 16, r.Height, RightCols.Contains(col) ? tfR : tfL);
         }
-        void FitColumns()
+        void FitColumns() { FitColumns(lv); if (lvG != null) FitColumns(lvG); }
+        static void FitColumns(ListView lv)
         {
             int n = lv.Columns.Count, sum = 0;
             for (int i = 0; i < n - 1; i++) sum += lv.Columns[i].Width;
@@ -1027,7 +1136,7 @@ namespace WatchDog
             g.FillRectangle(bBg, 0, 0, w, h);
             g.DrawLine(pAccDim, 0, 0, w, 0);
             g.FillRectangle(bHaz, 12, 9, 22, 10);
-            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 名字旁的盾牌 = 看门狗在管（蓝 自动处理 / 黄 只提醒） · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
+            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 骨头盾牌 = 重点监控（红 自动处理 / 黄 只提醒） · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
                 selfMB, selfCpu, selfGdi, series.Count);
             Txt(g, txt, fCN, cGray, 42, 0, w - 54, h);
         }
@@ -1150,7 +1259,7 @@ namespace WatchDog
                 menuWatchA.Text = isW ? "◉ 修改监控（超过上限时自动重启）" : "◉ 用看门狗监控（超过上限时自动重启）";
                 menuWatchA.Visible = !Protected.Contains(n);
             };
-            lv.ContextMenuStrip = menu;
+            lv.ContextMenuStrip = menu; lvG.ContextMenuStrip = menu;
         }
         ToolStripMenuItem MenuItem(ContextMenuStrip m, string text, EventHandler onClick)
         {
