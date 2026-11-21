@@ -705,20 +705,35 @@ namespace WatchDog
         {
             Graphics g = e.Graphics; int w = watchHead.Width, h = watchHead.Height;
             g.FillRectangle(bBg, 0, 0, w, h);
-            g.DrawImage(Shield(true, 24), 0, 3);
+            int n = lvG.Items.Count, au = 0, worst = 0; int[] cnt = new int[3];
+            foreach (ListViewItem it in lvG.Items)
+            {
+                Rule r; if (!guarded.TryGetValue(it.Text, out r)) continue;
+                if (r.Auto) au++;
+                int gl = GuardLevel(it.Text, r); cnt[gl]++; worst = Math.Max(worst, gl);
+            }
+            g.DrawImage(Shield(worst, 24), 0, 3);
             Txt(g, "重点监控", fCNbig, cText, 30, 0, 100, h - 4);
             int x = 30 + TextRenderer.MeasureText("重点监控", fCNbig).Width + 4;
-            Txt(g, "// WATCHLIST  看门狗专项修复盯着的程序，出问题会被处理", fCN, cGray, x, 2, w - x - 330, h - 4);
-            int n = lvG.Items.Count, au = 0;
-            foreach (ListViewItem it in lvG.Items) { Rule r; if (guarded.TryGetValue(it.Text, out r) && r.Auto) au++; }
-            Txt(g, string.Format("{0} 个程序 · 红 = 超上限且空闲时自动处理 {1} · 黄 = 只提醒 {2}", n, au, n - au), fCN, cGray, w - 330, 2, 330, h - 4, tfR);
+            Txt(g, "// WATCHLIST  看门狗专项修复盯着的程序，出问题会被处理", fCN, cGray, x, 2, w - x - 430, h - 4);
+            Txt(g, string.Format("{0} 个程序（{1} 个自动处理） · 蓝 正常 {2} · 黄 留意 {3} · 红 出问题 {4}", n, au, cnt[0], cnt[1], cnt[2]), fCN, cGray, w - 430, 2, 430, h - 4, tfR);
             g.FillRectangle(bDimLine, 0, h - 2, w, 1);
-            g.FillRectangle(bLv[Lx(2)], 0, h - 3, 118, 3);
+            g.FillRectangle(bLv[Lx(worst)], 0, h - 3, 118, 3);
         }
-        // 重点监控的标记：盾牌 + 交叉的两根骨头（看门狗盯着的"危险分子"）。红边 = 自动处理，黄边 = 只提醒。画一次缓存起来
-        Bitmap Shield(bool auto, int s)
+        // 重点监控程序现在的状态：0 正常（蓝）/ 1 需要留意（黄）/ 2 出问题（红：规则命中、超过上限，或稳定性 / 句柄判成有问题）
+        int GuardLevel(string name, Rule gr)
         {
-            Bitmap b; int key = s * 2 + (auto ? 1 : 0);
+            int lv = 0;
+            foreach (Hit h in hits) if (h.Rule.Id == gr.Id) lv = 2;
+            if (OverLimit(gr) >= 1) lv = 2;
+            Rating rt; if (ratings.TryGetValue(name, out rt)) lv = Math.Max(lv, rt.Level);
+            lv = Math.Max(lv, ResLevel(name));
+            return Math.Min(2, Math.Max(0, lv));
+        }
+        // 重点监控的标记：盾牌 + 交叉的两根骨头（看门狗盯着的"危险分子"）。蓝 = 正常，黄 = 需要留意，红 = 出问题。画一次缓存起来
+        Bitmap Shield(int level, int s)
+        {
+            Bitmap b; int key = s * 4 + level;
             if (shieldBmp.TryGetValue(key, out b)) return b;
             b = Keep(new Bitmap(s, s));
             using (Graphics g = Graphics.FromImage(b))
@@ -730,8 +745,8 @@ namespace WatchDog
                 p.AddBezier(r, s * 0.5f, r, s * 0.74f, mid + s * 0.16f, s * 0.86f, mid, bot);
                 p.AddBezier(mid, bot, mid - s * 0.16f, s * 0.86f, l, s * 0.74f, l, s * 0.5f);
                 p.CloseFigure();
-                Color edge = auto ? cRed : cYellow;
-                using (SolidBrush f = new SolidBrush(auto ? Color.FromArgb(96, 10, 18) : Color.FromArgb(70, 54, 6))) g.FillPath(f, p);
+                Color edge = level >= 2 ? cRed : level == 1 ? cYellow : cCyan;
+                using (SolidBrush f = new SolidBrush(level >= 2 ? Color.FromArgb(96, 10, 18) : level == 1 ? Color.FromArgb(70, 54, 6) : Color.FromArgb(10, 52, 66))) g.FillPath(f, p);
                 using (Pen pe = new Pen(edge, Math.Max(1.3f, s / 13f))) g.DrawPath(pe, p);
                 Color bone = Color.FromArgb(244, 236, 218);
                 float bw = Math.Max(1.5f, s * 0.09f), kr = Math.Max(1.15f, s * 0.065f);
@@ -832,10 +847,10 @@ namespace WatchDog
                 Rule gr;
                 if (guarded.TryGetValue(it.Text, out gr))
                 {
-                    // 重点监控（看门狗专项修复在管）：名字右边一个交叉骨头的盾牌（红 = 自动处理，黄 = 只提醒），左边一道细线
-                    bool au = gr.Auto && gr.FixType != "none";
-                    if (!it.Selected) g.FillRectangle(au ? bLv[Lx(2)] : bLv[1], r.X, r.Y + 6, 2, r.Height - 12);
-                    g.DrawImage(Shield(au, 18), r.Right - 22, r.Y + (r.Height - 18) / 2);
+                    // 重点监控（看门狗专项修复在管）：名字右边一个交叉骨头的盾牌，左边一道细线。蓝 = 正常，黄 = 需要留意，红 = 出问题
+                    int gl = GuardLevel(it.Text, gr);
+                    if (!it.Selected) g.FillRectangle(bLv[Lx(gl)], r.X, r.Y + 6, 2, r.Height - 12);
+                    g.DrawImage(Shield(gl, 18), r.Right - 22, r.Y + (r.Height - 18) / 2);
                     tw -= 22;
                 }
                 else if (watched.ContainsKey(it.Text)) { Txt(g, "◉", fCN, cCyan, r.Right - 20, r.Y, 16, r.Height); tw -= 18; }
@@ -1136,7 +1151,7 @@ namespace WatchDog
             g.FillRectangle(bBg, 0, 0, w, h);
             g.DrawLine(pAccDim, 0, 0, w, 0);
             g.FillRectangle(bHaz, 12, 9, 22, 10);
-            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 骨头盾牌 = 重点监控（红 自动处理 / 黄 只提醒） · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
+            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 骨头盾牌 = 重点监控（蓝 正常 / 黄 留意 / 红 出问题） · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
                 selfMB, selfCpu, selfGdi, series.Count);
             Txt(g, txt, fCN, cGray, 42, 0, w - 54, h);
         }
