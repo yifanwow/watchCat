@@ -24,7 +24,7 @@ namespace WatchDog
         Font fIcon, fIconBig;
         SolidBrush bPrimary, bPrimaryHot, bTile, bTileHot, bFeat, bFeatHot;
         Pen pTile, pFeat;
-        ActTile tFixAll, tCheck, tFixes, tRules, tLog, tReports, tIgnored, tTask, tFolder;
+        ActTile tFixAll, tCheck, tFixes, tRules, tLog, tReports, tIgnored, tFolder;
 
         // Windows 11 自带的图标字体（没有就用 Windows 10 的）
         Font IconFont(float size)
@@ -65,12 +65,6 @@ namespace WatchDog
                 StartShell("explorer.exe", "\"" + dir + "\"");
             });
             tIgnored = Tile(0, "", "已忽略", ShowIgnoredWindow);
-            tTask = Tile(0, "", "后台看门狗", delegate
-            {
-                if (taskInstalled) { if (Ask("将删除看门狗计划任务，之后不再每 10 分钟自动检查和处理。确定吗？")) RunTool("Install-Watchdog.ps1", "-Uninstall"); else return; }
-                else RunTool("Install-Watchdog.ps1", "");
-                ReloadSoon(15);
-            });
             tFolder = Tile(0, "", "设置", delegate { ShowSettingsWindow(); });   // 开机自动启动、后台看门狗、文件夹
 
             actions.Paint += PaintActions;
@@ -95,6 +89,13 @@ namespace WatchDog
         }
         static Rectangle Inflate(Rectangle r) { r.Inflate(2, 2); return r; }
 
+        // 安装 / 取消后台看门狗（计划任务），在设置窗口里用
+        void ToggleTask()
+        {
+            if (taskInstalled) { if (Ask("将删除看门狗计划任务，之后不再每 10 分钟自动检查和处理。确定吗？")) RunTool("Install-Watchdog.ps1", "-Uninstall"); else return; }
+            else RunTool("Install-Watchdog.ps1", "");
+            ReloadSoon(15);
+        }
         void LayoutActions()
         {
             int x = 14, w = actions.ClientSize.Width - 28, y = 36;
@@ -104,10 +105,12 @@ namespace WatchDog
             y += 52;
             tFixes.R = new Rectangle(x, y, w, 64);
             y += 72;
-            ActTile[] small = { tRules, tLog, tReports, tIgnored, tTask, tFolder };
-            int cw = (w - 12) / 3;
-            for (int i = 0; i < small.Length; i++)
-                small[i].R = new Rectangle(x + (i % 3) * (cw + 6), y + (i / 3) * 38, i % 3 == 2 ? w - 2 * (cw + 6) : cw, 32);
+            // 第一排 3 个，第二排 2 个（后台看门狗的开关在"设置"里）
+            ActTile[] small = { tRules, tLog, tReports, tIgnored, tFolder };
+            int cw = (w - 12) / 3, hw = (w - 6) / 2;
+            for (int i = 0; i < 3; i++) small[i].R = new Rectangle(x + i * (cw + 6), y, i == 2 ? w - 2 * (cw + 6) : cw, 32);
+            tIgnored.R = new Rectangle(x, y + 38, hw, 32);
+            tFolder.R = new Rectangle(x + hw + 6, y + 38, w - hw - 6, 32);
         }
 
         // 小字说明（问题数、上次检查时间、最近一次修复……）：内容变了才重画
@@ -147,8 +150,9 @@ namespace WatchDog
             int nIg = ActiveIgnores().Count;
             tIgnored.Count = nIg > 0 ? nIg.ToString() : "";
             tReports.Count = incidents.Count > 0 ? incidents.Count.ToString() : "";
-            tTask.IconColor = taskInstalled ? cCyan : cRed;
-            tTask.Label = taskInstalled ? "取消看门狗" : "安装看门狗";
+            // 后台看门狗没装：设置按钮标红，提醒去设置里装上
+            tFolder.IconColor = taskInstalled ? cAccent : cRed;
+            tFolder.Count = taskInstalled ? "" : "!";
             tRules.Count = allRules.Count > 0 ? allRules.Count.ToString() : "";
 
             string sig = string.Join("|", actTiles.Select(t => t.Label + t.Sub + t.Count + t.SubColor.ToArgb() + t.IconColor.ToArgb())) + actLastFixColor.ToArgb();

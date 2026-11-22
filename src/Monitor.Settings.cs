@@ -113,7 +113,7 @@ namespace WatchDog
                     }
                     else if (hover == 1)
                     {
-                        tTask.Run();
+                        ToggleTask();
                         msg = "正在" + (taskInstalled ? "取消" : "安装") + "后台看门狗，可能会弹出管理员确认，十几秒后这里会更新";
                         body.Invalidate();
                     }

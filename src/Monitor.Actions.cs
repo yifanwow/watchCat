@@ -142,7 +142,7 @@ namespace WatchDog
 
             // 看门狗 + 自身占用
             SysRow last = sys.Count > 0 ? sys[sys.Count - 1] : null;
-            if (!taskInstalled) SetDog("未安装", "离线", 1, "看门狗还没安装：点下面\"安装看门狗\"", -1);
+            if (!taskInstalled) SetDog("未安装", "离线", 1, "看门狗还没安装：点右下角\"设置\"里的后台看门狗开关", -1);
             else if (last == null) SetDog("等待首次检查", "待命", 1, "安装好了，等第一次检查（最多 10 分钟）", -1);
             else
             {
