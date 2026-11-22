@@ -281,7 +281,7 @@ namespace WatchDog
                 bool fine = CyberDialog("重启完成", text + "。\n\n现在一切都正常吗？比如设置、登录状态、灯效、窗口都还在。\n（只问这一次，你的回答会记下来：正常的以后可以放心重启；不正常的以后不会自动重启它）",
                     true, "正常", "不正常", null, false);
                 SetFeedback(p.Name, fine ? "ok" : "bad");
-                if (!fine && Ask("要为 " + p.Name + " 建一条专门的修复规则吗？\n\n比如重启时连带重启它的服务或同一个软件的其他程序、按原来的参数启动，先试一次再保存。"))
+                if (!fine && Ask("要为 " + p.Name + " 建一条专门的修复规则吗？\n\n比如重启时连带重启它的服务或同一个软件的其他程序、按原来的参数启动，先试一次再保存。\n（不知道怎么选的话点\"取消\"，之后右键它 → 生成问题报告，发给开发者）"))
                     ShowRuleWizard(p.Name);
             }
         }
@@ -555,6 +555,7 @@ namespace WatchDog
                 };
                 NewBtn(body, "保存规则", x0 + 120, h - 52, 120, delegate { save(false); }, true);
                 NewBtn(body, "保存并分享", x0 + 250, h - 52, 120, delegate { save(true); }, false);
+                NewBtn(body, "生成问题报告", w - x0 - 100 - 140, h - 52, 130, delegate { f.Close(); MakeReport(name); }, false);
                 NewBtn(body, "取消", w - x0 - 100, h - 52, 100, delegate { f.Close(); }, false);
                 f.ShowDialog(this);
             }

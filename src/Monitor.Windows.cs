@@ -53,6 +53,7 @@ namespace WatchDog
                 case "ignored": ShowIgnoredWindow(); break;
                 case "settings": ShowSettingsWindow(); break;
                 case "wizard": ShowRuleWizard(pick ?? "lghub_agent"); break;
+                case "reportfile": File.WriteAllText(file, WriteReport(pick ?? "lghub_agent")); break;   // 自测：生成问题报告，把报告路径写进 file
                 case "ask": Ask("将结束 lghub_agent（1 个进程）并重新打开：\nC:\\Program Files\\LGHUB\\lghub_agent.exe\n\n这个程序里没保存的内容可能会丢失。确定吗？"); break;
                 case "prompt": Prompt("监控这个程序", "让看门狗监控 CorsairCpuIdService（现在 52 MB）。\n\n内存超过多少 MB 时提醒你？", "500"); break;
             }

@@ -126,7 +126,7 @@ namespace WatchDog
         Dictionary<int, Bitmap> shieldBmp = new Dictionary<int, Bitmap>();
         ImageList rowH;
         ContextMenuStrip menu, trayMenu;
-        ToolStripMenuItem menuWizard;
+        ToolStripMenuItem menuWizard, menuReport;
         ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote, menuCapture, menuIncident, menuAnalyze;
         Button btnPrimary, btnKill, btnOpen, btnAnalyze, btnCapture, btnReport;
         NotifyIcon tray;
@@ -159,7 +159,8 @@ namespace WatchDog
             Rectangle wa = Screen.PrimaryScreen.WorkingArea;   // 屏幕够高就开高一点，右侧栏更宽松
             // 最小尺寸 1451 × 1029：在 2K 屏上实测再小就会挤（右侧栏、重点监控列表显示不全）。屏幕本身更小时以屏幕为准
             Size minS = new Size(Math.Min(1451, wa.Width), Math.Min(1029, wa.Height));
-            Size = new Size(Math.Max(minS.Width, Math.Min(1480, wa.Width)), Math.Max(minS.Height, Math.Min(1060, wa.Height))); MinimumSize = minS;
+            // 默认尺寸 1470 × 1072：2K 屏上的标准显示尺寸（屏幕更小时以屏幕为准）
+            Size = new Size(Math.Max(minS.Width, Math.Min(1470, wa.Width)), Math.Max(minS.Height, Math.Min(1072, wa.Height))); MinimumSize = minS;
             StartPosition = FormStartPosition.CenterScreen;
             Font = fCN; BackColor = cBg; ForeColor = cText;
             try { formIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); Icon = formIcon; } catch { }
@@ -1257,6 +1258,7 @@ namespace WatchDog
             menuWatchA = MenuItem(menu, "◉ 用看门狗监控（超过上限时自动重启）", delegate { AddWatch(selected, true); });
             menuUnwatch = MenuItem(menu, "取消看门狗监控", delegate { RemoveWatch(selected); });
             menuWizard = MenuItem(menu, "🛠 为它建修复规则（向导：选重启方式，先试一次）…", delegate { ShowRuleWizard(selected); });
+            menuReport = MenuItem(menu, "📝 生成问题报告，发给开发者（不知道怎么处理时）…", delegate { MakeReport(selected); });
             menu.Items.Add(new ToolStripSeparator());
             menuSnooze = MenuItem(menu, "忽略这个问题（24 小时内不提醒）", delegate { string[] i = IssueOf(selected); if (i != null) IgnoreIssue(i[0], i[1], false); });
             menuNormal = MenuItem(menu, "确认正常，不再提醒", delegate
