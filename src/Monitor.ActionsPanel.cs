@@ -71,7 +71,7 @@ namespace WatchDog
                 else RunTool("Install-Watchdog.ps1", "");
                 ReloadSoon(15);
             });
-            tFolder = Tile(0, "", "工具文件夹", delegate { StartShell("explorer.exe", "\"" + ToolDir + "\""); });
+            tFolder = Tile(0, "", "设置", delegate { ShowSettingsWindow(); });   // 开机自动启动、后台看门狗、文件夹
 
             actions.Paint += PaintActions;
             actions.Resize += delegate { LayoutActions(); };

@@ -46,6 +46,13 @@ namespace WatchDog
                 return 1;
             }
 
+            // 被商店应用（比如 Claude 桌面版）带起来时，会被关在它的"作业"里：那个应用一更新，Windows 会把作业里的进程连带全部结束
+            //（WatchDog 曾因此两次被关掉，事件日志里记成"停止响应"）。这时通过资源管理器重新启动自己，脱离那个作业，自己退出
+            //（已经有一个在运行时不用：下面会直接把那个叫出来）
+            bool another = false;
+            try { using (Mutex.OpenExisting("Local\\yifanwow.WatchDog")) another = true; } catch { }
+            if (!another && argv.Length == 0 && InsidePackagedAppJob() && RelaunchViaExplorer()) return 0;
+
             // 只开一个：已经在运行（可能在托盘里）时，把它叫出来，自己退出
             bool own;
             using (Mutex mutex = new Mutex(false, "Local\\yifanwow.WatchDog"))
@@ -65,14 +72,58 @@ namespace WatchDog
                 using (EventWaitHandle exit = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\yifanwow.WatchDog.Exit"))
                 using (Monitor form = new Monitor(toolDir, dataDir, false, null, Get(a, "chart", "mem"), Get(a, "range", "30m")))
                 {
+                    form.StartInTray = a.ContainsKey("tray");   // 开机自动启动：只在托盘里
                     form.Prepare(true);
                     form.StartTimer();
+                    // 万一还是被 Windows 结束了（程序更新、卡住被关、重启后恢复应用），让 Windows 把它重新启动
+                    try { RegisterApplicationRestart("", 0); } catch { }
                     form.ListenForShow(show, exit);
                     Application.Run(form);
                 }
                 mutex.ReleaseMutex();
             }
             return 0;
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern int RegisterApplicationRestart(string cmdLine, int flags);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
+
+        // 在作业里，而且往上的父进程里有商店应用（C:\Program Files\WindowsApps\…）
+        static bool InsidePackagedAppJob()
+        {
+            try
+            {
+                bool inJob;
+                using (Process me = Process.GetCurrentProcess())
+                {
+                    if (!IsProcessInJob(me.Handle, IntPtr.Zero, out inJob) || !inJob) return false;
+                    Dictionary<int, int> parent = Native.ParentMap();
+                    int pid = me.Id;
+                    for (int i = 0; i < 12 && parent.TryGetValue(pid, out pid) && pid > 4; i++)
+                    {
+                        string p = Native.ImagePath(pid);
+                        if (p != null && p.IndexOf("\\WindowsApps\\", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+        static bool RelaunchViaExplorer()
+        {
+            // 防止万一脱离不了时反复重启：1 分钟内只试一次
+            string mark = Path.Combine(Path.GetTempPath(), "WatchDog.relaunch");
+            try { if (File.Exists(mark) && (DateTime.Now - File.GetLastWriteTime(mark)).TotalSeconds < 60) return false; File.WriteAllText(mark, DateTime.Now.ToString("s")); } catch { }
+            try
+            {
+                ProcessStartInfo si = new ProcessStartInfo("explorer.exe", "\"" + Application.ExecutablePath + "\"");
+                si.UseShellExecute = false;
+                using (Process.Start(si)) { }
+                return true;
+            }
+            catch { return false; }
         }
 
         // 截图：用 PrintWindow 抓窗口真实的样子（含 Windows 11 的深色标题栏和珊瑚红边框），
@@ -145,7 +196,7 @@ namespace WatchDog
                         }
                     }
                     if (snapshot != null) Snapshot(form, snapshot, bmp);
-                    // --window rules|fixes|fixlog|ignored|ask|prompt --winsnap x.png [--pick 规则id]：打开子窗口截图
+                    // --window rules|fixes|fixlog|ignored|settings|ask|prompt --winsnap x.png [--pick 规则id]：打开子窗口截图
                     if (a.ContainsKey("window")) form.SnapWindow(Get(a, "window", ""), Get(a, "winsnap", "window.png"), Get(a, "pick", null));
                     form.Report(outp);
                     outp.AppendLine("--- 自身资源 ---");

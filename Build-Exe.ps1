@@ -1,4 +1,4 @@
-﻿# Build WatchDog.exe: the monitor window, written in C# (src\*.cs).
+# Build WatchDog.exe: the monitor window, written in C# (src\*.cs).
 # Uses the C# compiler that ships with Windows (.NET Framework 4), so nothing is downloaded.
 # The exe must stay in this folder: it reads rules.json / rules.local.json / data\ here,
 # and runs the PowerShell helper scripts (watchdog, fixes) from here.
@@ -89,4 +89,6 @@ if ($wasRunning) {
 $ok = $LASTEXITCODE -eq 0
 Remove-Item $manifest -ErrorAction SilentlyContinue
 if ($ok -and (Test-Path $exe)) { Write-Host "Built: $exe" } else { Write-Host 'Build failed'; exit 1 }
-if ($wasRunning) { Start-Process $exe }   # it was running before: start the new version
+# it was running before: start the new version. Through explorer.exe, so it is not a child of whatever ran this
+# script (e.g. a Store app like Claude desktop) - those kill their whole process tree when they update
+if ($wasRunning) { Start-Process explorer.exe -ArgumentList "`"$exe`"" }

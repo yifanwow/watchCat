@@ -182,6 +182,26 @@ namespace WatchDog
             finally { CloseHandle(h); }
         }
 
+        // 进程号 -> 父进程号（Toolhelp 快照）
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct PROCESSENTRY32 { public int dwSize, cntUsage, th32ProcessID; public IntPtr th32DefaultHeapID; public int th32ModuleID, cntThreads, th32ParentProcessID, pcPriClassBase, dwFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile; }
+        [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr CreateToolhelp32Snapshot(int flags, int pid);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool Process32FirstW(IntPtr snap, ref PROCESSENTRY32 e);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool Process32NextW(IntPtr snap, ref PROCESSENTRY32 e);
+        public static Dictionary<int, int> ParentMap()
+        {
+            Dictionary<int, int> m = new Dictionary<int, int>();
+            IntPtr snap = CreateToolhelp32Snapshot(2, 0);   // TH32CS_SNAPPROCESS
+            if (snap == IntPtr.Zero || snap == new IntPtr(-1)) return m;
+            try
+            {
+                PROCESSENTRY32 e = new PROCESSENTRY32(); e.dwSize = Marshal.SizeOf(typeof(PROCESSENTRY32));
+                for (bool ok = Process32FirstW(snap, ref e); ok; ok = Process32NextW(snap, ref e)) m[e.th32ProcessID] = e.th32ParentProcessID;
+            }
+            finally { CloseHandle(snap); }
+            return m;
+        }
+
         // 服务所在的进程号；服务没运行返回 0
         public static int ServicePid(string name)
         {
