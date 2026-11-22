@@ -172,6 +172,7 @@ namespace WatchDog
             FitColumns();
             UpdateDetailButtons();
             UpdateActionInfo();
+            if (tick % 12 == 3) CaptureSomeLaunches();   // 每分钟顺手记 2 个程序的启动方式（重启时按原来的参数打开）
 
             UpdateDiskInfo();
             header.Invalidate(); status.Invalidate(); profile.Invalidate(); chart.Invalidate(); detail.Invalidate();
@@ -233,6 +234,7 @@ namespace WatchDog
                 if (rt.Text == "疑似泄漏") list.Add(NewIssue(label + " 疑似内存泄漏", rt.Note, 2, r.Name, "prog:" + r.Name));
                 else if (rt.Text == "持续泄漏") list.Add(NewIssue(label + " 一直在慢慢泄漏", rt.Note, 2, r.Name, "prog:" + r.Name));
                 else if (rt.Text == "缓慢上涨") list.Add(NewIssue(label + " 在缓慢上涨", rt.Note, 1, r.Name, "prog:" + r.Name));
+                else if (rt.Text == "涨得多") list.Add(NewIssue(label + " 内存涨得多（浏览器，先关掉不用的标签页）", rt.Note, 1, r.Name, "prog:" + r.Name));
                 else if (rt.Text == "短时上涨")
                 {
                     Ring ring; double[] st = series.TryGetValue(r.Name, out ring) ? ring.Stats(GapSec) : null;
@@ -330,26 +332,8 @@ namespace WatchDog
                 if (!noAsk && !Ask(string.Format("{0} 是系统服务「{1}」，将重启这个服务（需要管理员权限，会弹出确认窗口）。确定吗？", name, svcName))) return false;
                 bool ok = RunElevated("Restart-ServiceHard.ps1", "-Name \"" + svcName + "\""); ReloadSoon(8); return ok;
             }
-            Process[] procs = ByName(name);
-            try
-            {
-                if (procs.Length == 0) { Say(name + " 已经不在运行了。"); return false; }
-                int me = Process.GetCurrentProcess().Id;
-                if (procs.Any(p => p.Id == me)) { Say("这是监控窗口自己。"); return false; }
-                string path = PathOf(name);
-                if (path == null) { Say("拿不到 " + name + " 的程序路径（可能是管理员或系统进程），无法自动重新打开。"); return false; }
-                if (!noAsk && !Ask(string.Format("将结束 {0}（{1} 个进程）并重新打开：\n{2}\n\n这个程序里没保存的内容可能会丢失。确定吗？", name, procs.Length, path))) return false;
-                int failed = 0;
-                foreach (Process p in procs) try { p.Kill(); } catch { failed++; }
-                if (failed > 0) { Say(name + " 有 " + failed + " 个进程结束失败（可能需要管理员权限）。"); return false; }
-                System.Threading.Thread.Sleep(2000);
-                Process[] again = ByName(name);
-                if (again.Length == 0)
-                    try { Process.Start(new ProcessStartInfo(path) { WorkingDirectory = Path.GetDirectoryName(path), UseShellExecute = true }).Dispose(); } catch { }
-                DisposeAll(again);
-                ReloadSoon(8); return true;
-            }
-            finally { DisposeAll(procs); }
+            // 没有专项规则的程序：先试最小的范围，按原来的方式重新打开，核对它回来了（Monitor.SmartFix.cs）
+            return SmartRestart(name, noAsk);
         }
         // 按规则修复
         bool ApplyFix(Hit hit, bool noAsk)
@@ -361,6 +345,8 @@ namespace WatchDog
                 case "restartService":
                     if (!noAsk && !Ask(string.Format("{0}\n\n{1}\n\n将执行：{2}（需要管理员权限）。确定吗？", r.Title, r.Cause, r.FixLabel))) return false;
                     { bool ok = RunElevated("Restart-ServiceHard.ps1", "-Name " + r.FixService); ReloadSoon(8); return ok; }
+                case "restartGroup":
+                    return RunGroup(Json.Objects(Json.Obj(r.Raw, "fix").ContainsKey("steps") ? Json.Obj(r.Raw, "fix")["steps"] : null), r.Title + "\n\n" + r.Cause, noAsk, null);
                 case "script":
                     if (!noAsk && !Ask(string.Format("{0}\n\n{1}\n\n将执行：{2}（需要管理员权限）。确定吗？", r.Title, r.Cause, r.FixLabel))) return false;
                     RunTool(r.FixScript, "-Quiet"); ReloadSoon(8); return true;

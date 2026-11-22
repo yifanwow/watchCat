@@ -126,6 +126,7 @@ namespace WatchDog
         Dictionary<int, Bitmap> shieldBmp = new Dictionary<int, Bitmap>();
         ImageList rowH;
         ContextMenuStrip menu, trayMenu;
+        ToolStripMenuItem menuWizard;
         ToolStripMenuItem menuFix, menuWatch, menuWatchA, menuUnwatch, menuSnooze, menuNormal, menuRestore, menuNote, menuCapture, menuIncident, menuAnalyze;
         Button btnPrimary, btnKill, btnOpen, btnAnalyze, btnCapture, btnReport;
         NotifyIcon tray;
@@ -583,6 +584,8 @@ namespace WatchDog
             Rule wr;
             if (guarded.TryGetValue(name, out wr) && wr.MinMB > 0) sub += string.Format("  ·  看门狗在管：超过 {0:N0} MB {1}", wr.MinMB, wr.Auto && wr.FixType != "none" ? "且空闲时自动处理" : "时提醒");
             else if (watched.TryGetValue(name, out wr)) sub += string.Format("  ·  ◉ 看门狗监控中（超过 {0} MB {1}）", wr.MinMB, wr.Auto ? "自动重启" : "提醒");
+            if (FeedbackOf(name) == "bad") sub += "  ·  上次重启后不正常（右键可以建修复规则）";
+            else if (IsBrowser(name)) sub += "  ·  浏览器：内存随网页涨落";
             Txt(g, sub, fCN, cGray, 56, 58, w - 70, 18);
             Issue ri; resIssues.TryGetValue(name, out ri);
             string[,] cols = { { "内存", string.Format("{0:N0} MB", r.PrivMB) }, { "CPU", string.Format("{0:N1}%", r.CpuPct) }, { "读写", string.Format("{0:N1} MB/s", r.IoMBs) },
@@ -598,7 +601,7 @@ namespace WatchDog
             }
             Rating rt = GetRating(name, r.PrivMB);
             Txt(g, "稳定性：" + rt.Text, fCNb, LevelColor(rt.Level), 14, 122, 130, 18);
-            Txt(g, rt.Text == "已知问题" ? rt.Trend : rt.Note, fCN, cGray, 140, 122, w - 154, 18);
+            Txt(g, rt.Text == "已知问题" ? rt.Trend : IsBrowser(name) && rt.Note == BrowserWhy ? rt.Trend : rt.Note, fCN, cGray, 140, 122, w - 154, 18);
             Hit hit;
             if (hitByTarget.TryGetValue(name, out hit))
             {
@@ -614,8 +617,12 @@ namespace WatchDog
                 if (room >= 18) Txt(g, ri.Sub, fCN, cGray, 14, 164, w - 28, room >= 60 ? 36 : 18, room >= 60 ? tfW : tfL);
             }
             else if (rt.Forecast.Length > 0) Txt(g, rt.Forecast, fCNb, LevelColor(rt.Level), 14, 144, w - 28, 18);
+            bool browserNote = hit == null && ri == null && rt.Forecast.Length == 0 && IsBrowser(name);
+            int bRoom = h - 84 - 144;   // 下面是按钮：放得下两行才折行，否则只放一行短的
+            if (browserNote && bRoom >= 40) Txt(g, BrowserWhy + "。真的泄漏是关掉标签页后也一直降不下来。", fCN, cGray, 14, 144, w - 28, 36, tfW);
+            else if (browserNote && bRoom >= 18) Txt(g, "浏览器的内存跟着打开的网页涨落，大、忽高忽低是正常的", fCN, cGray, 14, 144, w - 28, 18, tfL | TextFormatFlags.EndEllipsis);
             // 剩下的空间：近 30 分钟的小走势 + 统计
-            int top = hit != null ? 200 : ri != null ? (h - 84 - 164 >= 60 ? 204 : 186) : rt.Forecast.Length > 0 ? 170 : 148, bottom = h - 84;
+            int top = hit != null ? 200 : ri != null ? (h - 84 - 164 >= 60 ? 204 : 186) : rt.Forecast.Length > 0 ? 170 : browserNote ? (bRoom >= 40 ? 186 : 168) : 148, bottom = h - 84;
             if (bottom - top >= 40) PaintMini(g, name, 14, top, w - 28, bottom - top);
         }
         void PaintMini(Graphics g, string name, int x, int y, int w, int h)
@@ -1249,6 +1256,7 @@ namespace WatchDog
             menuWatch = MenuItem(menu, "◉ 用看门狗监控（超过上限时提醒）", delegate { AddWatch(selected, false); });
             menuWatchA = MenuItem(menu, "◉ 用看门狗监控（超过上限时自动重启）", delegate { AddWatch(selected, true); });
             menuUnwatch = MenuItem(menu, "取消看门狗监控", delegate { RemoveWatch(selected); });
+            menuWizard = MenuItem(menu, "🛠 为它建修复规则（向导：选重启方式，先试一次）…", delegate { ShowRuleWizard(selected); });
             menu.Items.Add(new ToolStripSeparator());
             menuSnooze = MenuItem(menu, "忽略这个问题（24 小时内不提醒）", delegate { string[] i = IssueOf(selected); if (i != null) IgnoreIssue(i[0], i[1], false); });
             menuNormal = MenuItem(menu, "确认正常，不再提醒", delegate
@@ -1273,6 +1281,7 @@ namespace WatchDog
                 menuWatch.Text = isW ? "◉ 修改监控（超过上限时提醒）" : "◉ 用看门狗监控（超过上限时提醒）";
                 menuWatchA.Text = isW ? "◉ 修改监控（超过上限时自动重启）" : "◉ 用看门狗监控（超过上限时自动重启）";
                 menuWatchA.Visible = !Protected.Contains(n);
+                menuWizard.Visible = !Protected.Contains(n);
             };
             lv.ContextMenuStrip = menu; lvG.ContextMenuStrip = menu;
         }

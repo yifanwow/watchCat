@@ -367,7 +367,8 @@ namespace WatchDog
         void LoadRules()
         {
             List<string> files = new List<string>();
-            foreach (string n in new[] { "rules.json", "rules.local.json" }) { string p = Path.Combine(RulesDir, n); if (File.Exists(p)) files.Add(p); }
+            // 自带的公共规则 → 在线更新的公共规则（data\rules.remote.json）→ 我的规则
+            foreach (string p in new[] { Path.Combine(RulesDir, "rules.json"), Path.Combine(DataDir, "rules.remote.json"), Path.Combine(RulesDir, "rules.local.json") }) if (File.Exists(p)) files.Add(p);
             string sig = string.Join("|", files.Select(p => Path.GetFileName(p) + ":" + File.GetLastWriteTimeUtc(p).Ticks));
             if (sig == rulesSig) return;
             rulesSig = sig;
@@ -376,13 +377,19 @@ namespace WatchDog
             Dictionary<string, Rule> shared = new Dictionary<string, Rule>();
             foreach (string p in files)
             {
-                bool local = Path.GetFileName(p) == "rules.local.json";
+                bool local = Path.GetFileName(p) == "rules.local.json", remote = Path.GetFileName(p) == "rules.remote.json";
                 try
                 {
                     foreach (Dictionary<string, object> d in Json.Objects(Json.Parse(Json.ReadFile(p))))
                     {
                         Rule r = Rule.From(d);
                         Rule old;
+                        if (remote)
+                        {
+                            // 在线规则：自带规则里已有同 id 的，只有版本号（rev）更大才替换；要运行的脚本本机没有就跳过
+                            if (r.Id.Length > 0 && byId.TryGetValue(r.Id, out old) && Json.Num(d, "rev") <= Json.Num(old.Raw, "rev")) continue;
+                            if (r.FixType == "script" && (r.FixScript == null || !File.Exists(Path.Combine(ToolDir, r.FixScript)))) continue;
+                        }
                         if (r.Id.Length > 0 && byId.TryGetValue(r.Id, out old)) { r.Source = local ? "改过" : old.Source; ordered[ordered.IndexOf(old)] = r; }
                         else { r.Source = local ? "我的" : "公共"; ordered.Add(r); }
                         if (r.Id.Length > 0) byId[r.Id] = r;
@@ -409,6 +416,7 @@ namespace WatchDog
         // 每分钟一次：规则、忽略设置、历史数据、服务进程号、计划任务状态、最近动作、规则里的文件大小、清理过期的实时数据
         void UpdateSlow()
         {
+            MaybeUpdateRules(false);   // 公共规则每天从 GitHub 更新一次（设置里可以关）
             LoadRules();
             LoadIgnores();
             LoadHistory();
@@ -665,6 +673,7 @@ namespace WatchDog
         Rating GetRating(string name, double mb)
         {
             Rating rt = GetRatingRaw(name, mb);
+            if (IsBrowser(name)) rt = BrowserRating(rt);   // 浏览器：内存大、波动大通常是正常的
             if (rt.Level >= 1 && rt.Text != "已知问题")
             {
                 IgnoreEntry ig = IsIgnored("prog:" + name);

@@ -54,33 +54,35 @@ namespace WatchDog
 
         void ShowSettingsWindow()
         {
-            const int w = 700, h = 372;
+            const int w = 700, h = 446;
             BufferedPanel body;
             using (Form f = NewWindow("SETTINGS", "设置", w, h, out body))
             {
                 // 每一行：标题、说明、右边的开关（或状态）
                 const int rowH = 74, top = 56, rx = 22, rw = w - 44;
-                string[] titles = { "开机自动启动", "后台看门狗", "被关掉后自动重新打开" };
+                string[] titles = { "开机自动启动", "后台看门狗", "被关掉后自动重新打开", "自动更新公共规则" };
                 string[] subs = {
                     "登录 Windows 后自动打开 WatchDog，直接缩在托盘里，在后台记录走势",
                     "每 10 分钟检查一次（计划任务），超过上限且你空闲时自动处理；窗口关掉也照常运行",
-                    "程序更新、卡住被关掉、重启电脑恢复应用时，Windows 会把 WatchDog 重新打开（一直开着）" };
-                Rectangle[] sw = new Rectangle[3];
-                for (int i = 0; i < 3; i++) sw[i] = new Rectangle(w - rx - 18 - 52, top + i * rowH + 22, 52, 26);
+                    "程序更新、卡住被关掉、重启电脑恢复应用时，Windows 会把 WatchDog 重新打开（一直开着）",
+                    "每天从 GitHub 取一次最新的专项修复规则（只下载规则文件，不上传任何东西）" };
+                const int nRow = 4;
+                Rectangle[] sw = new Rectangle[nRow];
+                for (int i = 0; i < nRow; i++) sw[i] = new Rectangle(w - rx - 18 - 52, top + i * rowH + 22, 52, 26);
                 int hover = -1;
                 string msg = "";
-                Func<int, int> state = i => i == 0 ? (AutoStartOn() ? 1 : 0) : i == 1 ? (taskInstalled ? 1 : 0) : 2;   // 2 = 一直开着，不能关
+                Func<int, int> state = i => i == 0 ? (AutoStartOn() ? 1 : 0) : i == 1 ? (taskInstalled ? 1 : 0) : i == 3 ? (RulesUpdateOn() ? 1 : 0) : 2;   // 2 = 一直开着，不能关
 
                 body.Paint += (s, e) =>
                 {
                     Graphics g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
-                    for (int i = 0; i < 3; i++)
+                    for (int i = 0; i < nRow; i++)
                     {
                         int y = top + i * rowH, st = state(i);
                         g.FillRectangle(bDeep, rx, y + 4, rw, rowH - 10);
                         g.FillRectangle(st >= 1 ? bLv[0] : bDim, rx, y + 4, 3, rowH - 10);
                         Txt(g, titles[i], fCNbig, cText, rx + 18, y + 12, rw - 140, 24);
-                        Txt(g, subs[i], fCN, cGray, rx + 18, y + 38, rw - 130, 20, tfL | TextFormatFlags.EndEllipsis);
+                        Txt(g, i == 3 ? "每天从 GitHub 取一次最新规则，只下载不上传 · " + RulesUpdateText() : subs[i], fCN, cGray, rx + 18, y + 38, rw - 130, 20, tfL | TextFormatFlags.EndEllipsis);
                         Rectangle r = sw[i];
                         if (st == 2) { Txt(g, "已开启", fCNb, cCyan, r.X - 20, r.Y, r.Width + 20, r.Height, tfR); continue; }
                         // 开关：开 = 荧光蓝底、圆点在右；关 = 暗底、圆点在左
@@ -95,12 +97,12 @@ namespace WatchDog
                         using (SolidBrush kb = new SolidBrush(st == 1 ? cBg : cGray)) g.FillEllipse(kb, kx, r.Y + 3, r.Height - 6, r.Height - 6);
                         Txt(g, st == 1 ? "开" : "关", fCNb, st == 1 ? cCyan : cGray, r.X - 34, r.Y, 28, r.Height, tfR);
                     }
-                    Txt(g, msg, fCN, cYellow, rx, top + 3 * rowH + 6, rw, 20);
+                    Txt(g, msg, fCN, cYellow, rx, top + nRow * rowH + 2, rw, 20);
                 };
                 body.MouseMove += (s, e) =>
                 {
                     int hv = -1;
-                    for (int i = 0; i < 2; i++) if (Rectangle.Inflate(sw[i], 40, 8).Contains(e.Location)) hv = i;
+                    for (int i = 0; i < nRow; i++) if (i != 2 && Rectangle.Inflate(sw[i], 40, 8).Contains(e.Location)) hv = i;
                     if (hv != hover) { hover = hv; body.Cursor = hv >= 0 ? Cursors.Hand : Cursors.Default; body.Invalidate(); }
                 };
                 body.MouseClick += (s, e) =>
@@ -117,11 +119,19 @@ namespace WatchDog
                         msg = "正在" + (taskInstalled ? "取消" : "安装") + "后台看门狗，可能会弹出管理员确认，十几秒后这里会更新";
                         body.Invalidate();
                     }
+                    else if (hover == 3)
+                    {
+                        bool on = !RulesUpdateOn();
+                        WriteSetting("rulesUpdate", on);
+                        if (on) MaybeUpdateRules(true);
+                        msg = on ? "已开启：每天自动更新一次公共规则" : "已关闭自动更新（还是用现在的规则）";
+                        body.Invalidate();
+                    }
                 };
                 // 后台看门狗装好 / 取消后状态会变：每秒看一下
                 Timer t = new Timer(); t.Interval = 1000;
-                int last = state(0) * 2 + state(1);
-                t.Tick += delegate { int now = state(0) * 2 + state(1); if (now != last) { last = now; body.Invalidate(); } };
+                string last = state(0) + "|" + state(1) + "|" + state(3) + "|" + RulesUpdateText();
+                t.Tick += delegate { string now = state(0) + "|" + state(1) + "|" + state(3) + "|" + RulesUpdateText(); if (now != last) { last = now; body.Invalidate(); } };
                 t.Start();
                 f.FormClosed += delegate { t.Stop(); t.Dispose(); };
 
@@ -131,6 +141,7 @@ namespace WatchDog
                     if (!System.IO.Directory.Exists(DataDir)) System.IO.Directory.CreateDirectory(DataDir);
                     StartShell("explorer.exe", "\"" + DataDir + "\"");
                 }, false);
+                NewBtn(body, "立即更新规则", rx + 300, h - 52, 130, delegate { MaybeUpdateRules(true); body.Invalidate(); }, false);
                 NewBtn(body, "关闭", w - rx - 100, h - 52, 100, delegate { f.Close(); }, false);
                 f.ShowDialog(this);
             }

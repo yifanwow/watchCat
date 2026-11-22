@@ -182,6 +182,28 @@ namespace WatchDog
             finally { CloseHandle(h); }
         }
 
+        // 进程的命令行（含启动参数）：NtQueryInformationProcess 的 ProcessCommandLineInformation（Windows 8.1 起），只要"有限查询"权限
+        [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr h, int cls, IntPtr buf, int len, out int ret);
+        public static string CommandLine(int pid)
+        {
+            IntPtr h = OpenProcess(QUERY_LIMITED, false, pid);
+            if (h == IntPtr.Zero) return null;
+            IntPtr buf = IntPtr.Zero;
+            try
+            {
+                int len = 8192, ret;
+                buf = Marshal.AllocHGlobal(len);
+                int st = NtQueryInformationProcess(h, 60, buf, len, out ret);
+                if (st != 0 && ret > len && ret < (1 << 20)) { Marshal.FreeHGlobal(buf); len = ret; buf = Marshal.AllocHGlobal(len); st = NtQueryInformationProcess(h, 60, buf, len, out ret); }
+                if (st != 0) return null;
+                int n = Marshal.ReadInt16(buf) & 0xFFFF;   // UNICODE_STRING：长度（字节），后面是指向文字的指针
+                IntPtr p = Marshal.ReadIntPtr(buf, IntPtr.Size);
+                return n > 0 && p != IntPtr.Zero ? Marshal.PtrToStringUni(p, n / 2) : null;
+            }
+            catch { return null; }
+            finally { if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf); CloseHandle(h); }
+        }
+
         // 进程号 -> 父进程号（Toolhelp 快照）
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         struct PROCESSENTRY32 { public int dwSize, cntUsage, th32ProcessID; public IntPtr th32DefaultHeapID; public int th32ModuleID, cntThreads, th32ParentProcessID, pcPriClassBase, dwFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szExeFile; }
@@ -253,6 +275,31 @@ namespace WatchDog
                 return found;
             }
             finally { if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf); CloseServiceHandle(scm); }
+        }
+
+        // 正在运行的服务：服务名 -> 进程号（一次枚举）
+        public static Dictionary<string, int> RunningServices()
+        {
+            Dictionary<string, int> o = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            IntPtr scm = OpenSCManager(null, null, 0x0004);
+            if (scm == IntPtr.Zero) return o;
+            IntPtr buf = IntPtr.Zero;
+            try
+            {
+                int need, count, resume = 0;
+                EnumServicesStatusEx(scm, 0, 0x30, 1, IntPtr.Zero, 0, out need, out count, ref resume, null);
+                if (need <= 0) return o;
+                buf = Marshal.AllocHGlobal(need); resume = 0;
+                if (!EnumServicesStatusEx(scm, 0, 0x30, 1, buf, need, out need, out count, ref resume, null)) return o;
+                int size = Marshal.SizeOf(typeof(ENUM_SERVICE_STATUS_PROCESS));
+                for (int i = 0; i < count; i++)
+                {
+                    ENUM_SERVICE_STATUS_PROCESS e = (ENUM_SERVICE_STATUS_PROCESS)Marshal.PtrToStructure(buf + i * size, typeof(ENUM_SERVICE_STATUS_PROCESS));
+                    if (e.Status.ProcessId > 0) o[Marshal.PtrToStringUni(e.ServiceName)] = (int)e.Status.ProcessId;
+                }
+            }
+            finally { if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf); CloseServiceHandle(scm); }
+            return o;
         }
 
         public static void Dwm(IntPtr h, int attr, int val) { try { DwmSetWindowAttribute(h, attr, ref val, 4); } catch { } }

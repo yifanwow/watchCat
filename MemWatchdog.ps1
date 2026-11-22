@@ -22,11 +22,20 @@ function PrivMB($procs) { [int](($procs | Measure-Object PrivateMemorySize64 -Su
 # that way: changed limit / idle time / auto on-off), and "disabled": true turns a rule off.
 function Load-Rules {
     $byId = [ordered]@{}; $n = 0
-    foreach ($f in 'rules.json', 'rules.local.json') {
+    # data\rules.remote.json = the shared rules downloaded by the WatchDog window (once a day, from GitHub).
+    # A downloaded rule replaces a bundled one only when its "rev" is higher; one whose fix script is missing here is skipped.
+    foreach ($f in 'rules.json', 'data\rules.remote.json', 'rules.local.json') {
         $p = Join-Path $PSScriptRoot $f
         if (-not (Test-Path $p)) { continue }
+        $remote = $f -like '*remote*'
         # PowerShell 5.1 returns a JSON array as ONE object; foreach unrolls it into single rules
-        try { foreach ($r in (ConvertFrom-Json (Get-Content $p -Raw -Encoding UTF8))) { $k = if ($r.id) { [string]$r.id } else { "#" + ($n++) }; $byId[$k] = $r } }
+        try { foreach ($r in (ConvertFrom-Json (Get-Content $p -Raw -Encoding UTF8))) {
+            $k = if ($r.id) { [string]$r.id } else { "#" + ($n++) }
+            if ($remote) {
+                if ($byId.Contains($k) -and [double]$r.rev -le [double]$byId[$k].rev) { continue }
+                if ($r.fix.type -eq 'script' -and -not ($r.fix.script -and (Test-Path (Join-Path $PSScriptRoot $r.fix.script)))) { continue }
+            }
+            $byId[$k] = $r } }
         catch { Log ("RULES ERROR in {0}: {1}" -f $f, $_.Exception.Message) }
     }
     @($byId.Values | Where-Object { -not $_.disabled })
@@ -98,6 +107,7 @@ function Invoke-Fix($r) {
         'restartProcess' { Restart-ProcessByName $r.when.process $r.fix.args }
         'restartService' { & (Join-Path $PSScriptRoot 'Restart-ServiceHard.ps1') -Name $r.fix.service | Out-Null }
         'script'         { & (Join-Path $PSScriptRoot $r.fix.script) -Quiet | Out-Null }
+        'restartGroup'   { & (Join-Path $PSScriptRoot 'Restart-Group.ps1') -Steps $r.fix.steps -Quiet | Out-Null }
     }
 }
 
@@ -153,13 +163,16 @@ function Test-FileSince($path, $texts, $since, $mark) {
 function Get-VerifyState($r, $t0, $mark) {
     $v = $r.verify; $miss = @()
     foreach ($n in @($v.running)) { if ($n -and -not (Get-Process -Name $n -ErrorAction SilentlyContinue)) { $miss += $n } }
-    $svcDown = $r.fix.type -eq 'restartService' -and (Get-Service -Name $r.fix.service -ErrorAction SilentlyContinue).Status -ne 'Running'
+    # services that must be running again: the restarted one, or every service in a restartGroup
+    $svcs = @(); if ($r.fix.type -eq 'restartService') { $svcs += $r.fix.service }
+    if ($r.fix.type -eq 'restartGroup') { $svcs += @($r.fix.steps | Where-Object { $_.service } | ForEach-Object { $_.service }) }
+    $svcDown = @($svcs | Where-Object { $_ -and (Get-Service -Name $_ -ErrorAction SilentlyContinue).Status -ne 'Running' })
     $fileOk = (-not $v.file) -or (Test-FileSince $v.file @($v.text) $t0 $mark)
     [pscustomobject]@{ Missing = $miss; SvcDown = $svcDown; FileOk = $fileOk }
 }
 function Confirm-Fix($r, $t0, $paths, $mark) {
     $v = $r.verify
-    if (-not $v -and $r.fix.type -ne 'restartService') { return 'no check defined' }
+    if (-not $v -and $r.fix.type -ne 'restartService' -and $r.fix.type -ne 'restartGroup') { return 'no check defined' }
     if (-not $v) { $v = [pscustomobject]@{}; $r | Add-Member -NotePropertyName verify -NotePropertyValue $v -Force }
     $within = if ($v.withinSec) { [int]$v.withinSec } else { 60 }
     for ($round = 1; $round -le 2; $round++) {
@@ -171,7 +184,7 @@ function Confirm-Fix($r, $t0, $paths, $mark) {
         } while ((Get-Date) -lt $deadline)
         if ($round -eq 2) { break }
         # recover once
-        if ($st.SvcDown) { Start-Service -Name $r.fix.service -ErrorAction SilentlyContinue }
+        foreach ($sv in $st.SvcDown) { Start-Service -Name $sv -ErrorAction SilentlyContinue }
         foreach ($n in $st.Missing) {
             $pp = $paths[$n]
             if ($pp) { $a = $null; if ($r.fix.args -and $n -eq $r.when.process) { $a = $r.fix.args }; if ($a) { Start-Process -FilePath $pp -ArgumentList $a } else { Start-Process -FilePath $pp } }
@@ -180,7 +193,7 @@ function Confirm-Fix($r, $t0, $paths, $mark) {
     }
     $msg = @()
     if ($st.Missing) { $msg += ('not running: ' + ($st.Missing -join ', ')) }
-    if ($st.SvcDown) { $msg += ('service not running: ' + $r.fix.service) }
+    if ($st.SvcDown) { $msg += ('service not running: ' + ($st.SvcDown -join ', ')) }
     if (-not $st.FileOk) { $msg += ('log not updated: ' + $v.file) }
     'CHECK FAILED - ' + ($msg -join '; ')
 }

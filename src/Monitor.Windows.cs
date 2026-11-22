@@ -52,6 +52,7 @@ namespace WatchDog
                 case "fixlog": ShowFixLogWindow(); break;
                 case "ignored": ShowIgnoredWindow(); break;
                 case "settings": ShowSettingsWindow(); break;
+                case "wizard": ShowRuleWizard(pick ?? "lghub_agent"); break;
                 case "ask": Ask("将结束 lghub_agent（1 个进程）并重新打开：\nC:\\Program Files\\LGHUB\\lghub_agent.exe\n\n这个程序里没保存的内容可能会丢失。确定吗？"); break;
                 case "prompt": Prompt("监控这个程序", "让看门狗监控 CorsairCpuIdService（现在 52 MB）。\n\n内存超过多少 MB 时提醒你？", "500"); break;
             }
@@ -377,7 +378,7 @@ namespace WatchDog
                     string rest = e[2];
                     int colon = rest.IndexOf(':');
                     string id = colon > 0 ? rest.Substring(0, colon) : "";
-                    string title; string name = titles.TryGetValue(id, out title) ? title : id;
+                    string title; string name = titles.TryGetValue(id, out title) ? title : id.StartsWith("restart-") ? "手动重启 " + id.Substring(8) : id;
                     switch (e[1])
                     {
                         case "DONE":
