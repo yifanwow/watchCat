@@ -182,10 +182,13 @@ namespace WatchDog
             Row(g, "BOOT", boot.ToString("MM-dd HH:mm") + " 开机", x, AvY + 44, tw);
             Row(g, "UP", "已运行 " + Span(up), x, AvY + 62, tw);
             int y2 = AvY + AvS + 8;
-            if (h < ProfileH) return;
+            // 窗口矮时这几行收起来；展开 / 收起的动画过程中，放得下哪行画哪行
+            int bottom = h - 6;
+            if (y2 + 17 > bottom) return;
             g.FillRectangle(bDimLine, 14, y2 - 4, w - 28, 1);
             Row(g, "CPU", cpuName, 14, y2, w - 28);
-            Row(g, "GPU", gpuName, 14, y2 + 18, w - 28);
+            if (y2 + 35 <= bottom) Row(g, "GPU", gpuName, 14, y2 + 18, w - 28);
+            if (y2 + 53 > bottom) return;
             double ramGB = Native.Mem().ullTotalPhys / 1073741824.0;
             Row(g, "MEM", string.Format("{0:N0} GB 内存   ", Math.Round(ramGB)), 14, y2 + 36, 130);
             Row(g, "DISK", diskTxt, 150, y2 + 36, w - 164);

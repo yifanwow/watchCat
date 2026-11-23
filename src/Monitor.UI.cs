@@ -1235,8 +1235,31 @@ namespace WatchDog
             int prof = avail - ProfileH >= diagMin + detNeed ? ProfileH : ProfileMini;
             int rest = avail - prof;
             int hgt = Math.Max(diagMin, Math.Min(diagNeed, rest - detNeed));
+            sideProfT = prof; sideDiagT = hgt;
+            // 自测截图时直接到位；平时用一个短动画过渡（约 150 毫秒，只在高度要变时才跑定时器）
+            if (selfTest || !Visible) { SetSideHeights(prof, hgt); return; }
+            if (sideAnim == null)
+            {
+                sideAnim = new Timer(); sideAnim.Interval = 15;
+                sideAnim.Tick += delegate
+                {
+                    int p = Step(profile.Height, sideProfT), d = Step(diag.Height, sideDiagT);
+                    SetSideHeights(p, d);
+                    if (p == sideProfT && d == sideDiagT) sideAnim.Stop();
+                };
+            }
+            if ((profile.Height != prof || diag.Height != hgt) && !sideAnim.Enabled) sideAnim.Start();
+        }
+        Timer sideAnim; int sideProfT, sideDiagT;
+        // 每帧走剩下距离的 35%（先快后慢），差 2 像素以内直接到位
+        static int Step(int cur, int target) { int d = target - cur; return Math.Abs(d) <= 2 ? target : cur + (int)Math.Round(d * 0.35); }
+        void SetSideHeights(int prof, int hgt)
+        {
+            if (profile.Height == prof && diag.Height == hgt) return;
+            side.SuspendLayout();
             if (profile.Height != prof) { profile.Height = prof; profile.Invalidate(); }
             if (diag.Height != hgt) diag.Height = hgt;
+            side.ResumeLayout(true);
         }
         // "选中的程序"至少要多高：文字内容 + 下面两排按钮（84），和 PaintDetail 里的排法对应
         int DetailNeed()
