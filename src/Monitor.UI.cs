@@ -1218,15 +1218,38 @@ namespace WatchDog
             foreach (Button b in new[] { btnPrimary, btnKill, btnOpen }) if (b.Top != y) b.Top = y;
             foreach (Button b in new[] { btnAnalyze, btnCapture, btnReport }) if (b.Top != y - 34) b.Top = y - 34;
         }
-        // 体检结论按内容定高度（问题数 + 最近 5 次检查），剩下的高度都给"选中的程序"
+        // 右侧栏按窗口高度动态分配（操作区固定）：
+        //   1. 先保证"选中的程序"的文字不被按钮压住、体检结论至少放得下第一个问题；
+        //   2. 放不下时"当前用户"收起设备信息那几行（CPU / 显卡 / 内存）；
+        //   3. 多出来的先给体检结论（全部问题 + 最近 5 次检查），再多的给"选中的程序"的小走势图。
         void LayoutSide()
         {
-            if (side == null || diag == null) return;
+            if (side == null || diag == null || profile == null) return;
+            int avail = side.ClientSize.Height - 10 - 10 - 10 - actions.Height;
+            if (avail <= 0) return;
+            int head = DogY + DogH + 8 + 48;
+            int diagMin = head + (issues.Count > 0 ? 36 + 24 : 12);
             int logLines = Math.Min(5, sys.Count);
-            int need = DogY + DogH + 8 + 48 + issues.Count * 38 + (logLines > 0 ? 6 + 22 + logLines * 17 + 2 : 0) + 12;
-            int max = side.ClientSize.Height - ProfileH - 10 - 10 - 10 - actions.Height - 248;   // "选中的程序"至少留 248（两排按钮）
-            int hgt = Math.Max(DogY + DogH + 8 + 48 + 50, Math.Min(need, max));
+            int diagNeed = head + issues.Count * 38 + (logLines > 0 ? 6 + 22 + logLines * 17 + 2 : 0) + 12;
+            int detNeed = DetailNeed();
+            int prof = avail - ProfileH >= diagMin + detNeed ? ProfileH : ProfileMini;
+            int rest = avail - prof;
+            int hgt = Math.Max(diagMin, Math.Min(diagNeed, rest - detNeed));
+            if (profile.Height != prof) { profile.Height = prof; profile.Invalidate(); }
             if (diag.Height != hgt) diag.Height = hgt;
+        }
+        // "选中的程序"至少要多高：文字内容 + 下面两排按钮（84），和 PaintDetail 里的排法对应
+        int DetailNeed()
+        {
+            ProcRow r;
+            if (selected == null || !rows.TryGetValue(selected, out r)) return 120;
+            int top;
+            if (hitByTarget.ContainsKey(selected)) top = 200;
+            else if (resIssues.ContainsKey(selected)) top = 204;
+            else if (GetRating(selected, r.PrivMB).Forecast.Length > 0) top = 170;
+            else if (IsBrowser(selected)) top = 186;
+            else top = 148;
+            return top + 84;
         }
         static void SetText(Control c, string text) { if (c.Text != text) c.Text = text; }   // 文字真的变了才改，避免无谓重绘
         void UpdateDetailButtons()
@@ -1235,6 +1258,7 @@ namespace WatchDog
             string t = hit != null ? (hit.Rule.FixType == "none" ? "查看建议：" : "修复：") + hit.Rule.FixLabel
                 : selected != null && selected.StartsWith("svc:") ? "重启这个服务" : "重启这个程序";
             SetText(btnPrimary, t);
+            LayoutSide();   // 不同程序要显示的内容多少不一样
             SetText(btnReport, selected != null && incidents.ContainsKey(selected) ? "看报告 ●" : "看报告");   // ● = 已经有报告
         }
 

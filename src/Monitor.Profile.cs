@@ -19,7 +19,7 @@ namespace WatchDog
         string userName = Environment.UserName;
         string osName = "", cpuName = "", gpuName = "", diskTxt = "";
         DateTime lastDiskInfo = DateTime.MinValue;
-        const int ProfileH = 180, AvX = 14, AvY = 36, AvS = 72;
+        const int ProfileH = 180, ProfileMini = 120, AvX = 14, AvY = 36, AvS = 72;   // 窗口矮时收起 CPU / 显卡 / 内存那几行
 
         string AvatarPath { get { return Path.Combine(RulesDir, "avatar.png"); } }
         string ProfilePath { get { return Path.Combine(RulesDir, "profile.json"); } }
@@ -182,6 +182,7 @@ namespace WatchDog
             Row(g, "BOOT", boot.ToString("MM-dd HH:mm") + " 开机", x, AvY + 44, tw);
             Row(g, "UP", "已运行 " + Span(up), x, AvY + 62, tw);
             int y2 = AvY + AvS + 8;
+            if (h < ProfileH) return;
             g.FillRectangle(bDimLine, 14, y2 - 4, w - 28, 1);
             Row(g, "CPU", cpuName, 14, y2, w - 28);
             Row(g, "GPU", gpuName, 14, y2 + 18, w - 28);
