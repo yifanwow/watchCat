@@ -125,6 +125,8 @@ namespace WatchDog
             }
             if (menu != null) RecolorMenu(menu, M);
             if (trayMenu != null) RecolorMenu(trayMenu, M);
+            if (petMenu != null) RecolorMenu(petMenu, M);
+            PetThemeChanged();
         }
         static void Recolor(Control c, Func<Color, Color> M)
         {

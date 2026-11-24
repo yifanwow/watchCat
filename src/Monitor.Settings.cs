@@ -54,19 +54,19 @@ namespace WatchDog
 
         void ShowSettingsWindow()
         {
-            const int w = 700, h = 520;
+            const int w = 700, h = 594;
             BufferedPanel body;
             using (Form f = NewWindow("SETTINGS", "设置", w, h, out body))
             {
                 // 每一行：标题、说明、右边的开关（或状态）
                 const int rowH = 74, top = 56, rx = 22, rw = w - 44;
-                string[] titles = { "开机自动启动", "后台看门猫", "被关掉后自动重新打开", "自动更新公共规则", "界面主题" };
+                string[] titles = { "开机自动启动", "后台看门猫", "被关掉后自动重新打开", "自动更新公共规则", "界面主题", "看板娘" };
                 string[] subs = {
                     "登录 Windows 后自动打开 WatchCat，直接缩在托盘里，在后台记录走势",
                     "每 10 分钟检查一次（计划任务），超过上限且你空闲时自动处理；窗口关掉也照常运行",
                     "程序更新、卡住被关掉、重启电脑恢复应用时，Windows 会把 WatchCat 重新打开（一直开着）",
-                    "每天从 GitHub 取一次最新的专项修复规则（只下载规则文件，不上传任何东西）", "" };
-                const int nRow = 5;
+                    "每天从 GitHub 取一次最新的专项修复规则（只下载规则文件，不上传任何东西）", "", "主窗口右边的看门猫：会眨眼、挥手，发现问题时在头顶说出来。可以拖动换位置，右键有菜单" };
+                const int nRow = 6;
                 Rectangle[] sw = new Rectangle[nRow];
                 for (int i = 0; i < nRow; i++) sw[i] = new Rectangle(w - rx - 18 - 52, top + i * rowH + 22, 52, 26);
                 // 主题：右边每个主题一个按钮，用那个主题自己的颜色画（选中 = 实心）
@@ -74,7 +74,7 @@ namespace WatchDog
                 for (int k = 0; k < Themes.Length; k++) themeBtn[k] = new Rectangle(w - rx - 18 - (Themes.Length - k) * 84 + 6, top + 4 * rowH + 22, 78, 26);
                 int hover = -1;   // 0–3 开关，10 起 = 主题按钮
                 string msg = "";
-                Func<int, int> state = i => i == 0 ? (AutoStartOn() ? 1 : 0) : i == 1 ? (taskInstalled ? 1 : 0) : i == 3 ? (RulesUpdateOn() ? 1 : 0) : i == 4 ? 1 : 2;   // 2 = 一直开着，不能关
+                Func<int, int> state = i => i == 0 ? (AutoStartOn() ? 1 : 0) : i == 1 ? (taskInstalled ? 1 : 0) : i == 3 ? (RulesUpdateOn() ? 1 : 0) : i == 4 ? 1 : i == 5 ? (petOn ? 1 : 0) : 2;   // 2 = 一直开着，不能关
 
                 body.Paint += (s, e) =>
                 {
@@ -119,7 +119,7 @@ namespace WatchDog
                 body.MouseMove += (s, e) =>
                 {
                     int hv = -1;
-                    for (int i = 0; i < 4; i++) if (i != 2 && Rectangle.Inflate(sw[i], 40, 8).Contains(e.Location)) hv = i;
+                    for (int i = 0; i < nRow; i++) if (i != 2 && i != 4 && Rectangle.Inflate(sw[i], 40, 8).Contains(e.Location)) hv = i;
                     for (int k = 0; k < Themes.Length; k++) if (themeBtn[k].Contains(e.Location) && Themes[k] != Theme) hv = 10 + k;
                     if (hv != hover) { hover = hv; body.Cursor = hv >= 0 ? Cursors.Hand : Cursors.Default; body.Invalidate(); }
                 };
@@ -135,6 +135,13 @@ namespace WatchDog
                     {
                         ToggleTask();
                         msg = "正在" + (taskInstalled ? "取消" : "安装") + "后台看门猫，可能会弹出管理员确认，十几秒后这里会更新";
+                        body.Invalidate();
+                    }
+                    else if (hover == 5)
+                    {
+                        bool on = !petOn;
+                        if (pet != null) SetPetOn(on); else { petOn = on; WriteSetting("pet", on); }
+                        msg = on ? "看板娘回来了" : "看板娘先藏起来了（数据照常记录）";
                         body.Invalidate();
                     }
                     else if (hover >= 10)
@@ -155,8 +162,8 @@ namespace WatchDog
                 };
                 // 后台看门猫装好 / 取消后状态会变：每秒看一下
                 Timer t = new Timer(); t.Interval = 1000;
-                string last = state(0) + "|" + state(1) + "|" + state(3) + "|" + RulesUpdateText();
-                t.Tick += delegate { string now = state(0) + "|" + state(1) + "|" + state(3) + "|" + RulesUpdateText(); if (now != last) { last = now; body.Invalidate(); } };
+                string last = state(0) + "|" + state(1) + "|" + state(3) + "|" + state(5) + "|" + RulesUpdateText();
+                t.Tick += delegate { string now = state(0) + "|" + state(1) + "|" + state(3) + "|" + state(5) + "|" + RulesUpdateText(); if (now != last) { last = now; body.Invalidate(); } };
                 t.Start();
                 f.FormClosed += delegate { t.Stop(); t.Dispose(); };
 

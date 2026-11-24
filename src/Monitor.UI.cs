@@ -1410,7 +1410,7 @@ namespace WatchDog
                 if (formIcon != null) formIcon.Dispose();
                 if (avatar != null) avatar.Dispose();
                 if (logo != null) logo.Dispose();
-                if (petImg != null) petImg.Dispose();
+                DisposePet();
                 if (capIconH != IntPtr.Zero) { Native.DestroyIcon(capIconH); capIconH = IntPtr.Zero; }
             }
             base.Dispose(disposing);

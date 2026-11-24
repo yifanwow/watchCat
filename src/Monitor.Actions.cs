@@ -271,6 +271,7 @@ namespace WatchDog
             issues = list;
             LayoutSide();
             diag.Invalidate();
+            PetReact();   // 看板娘：第一次打招呼，出现新问题就说出来
         }
         static Issue NewIssue(string title, string sub, int level, string target, string key)
         {
