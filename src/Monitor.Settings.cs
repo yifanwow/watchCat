@@ -1,4 +1,4 @@
-// 设置窗口：开机自动启动、后台看门狗（计划任务）、被 Windows 关掉后自动重新打开、自动更新规则、界面主题、文件夹
+// 设置窗口：开机自动启动、后台看门猫（计划任务）、被 Windows 关掉后自动重新打开、自动更新规则、界面主题、文件夹
 // 开机自动启动写在 HKCU\...\Run（只影响当前用户，不需要管理员），启动参数 --tray：开机后直接缩在托盘里
 using System;
 using System.Collections.Generic;
@@ -60,11 +60,11 @@ namespace WatchDog
             {
                 // 每一行：标题、说明、右边的开关（或状态）
                 const int rowH = 74, top = 56, rx = 22, rw = w - 44;
-                string[] titles = { "开机自动启动", "后台看门狗", "被关掉后自动重新打开", "自动更新公共规则", "界面主题" };
+                string[] titles = { "开机自动启动", "后台看门猫", "被关掉后自动重新打开", "自动更新公共规则", "界面主题" };
                 string[] subs = {
-                    "登录 Windows 后自动打开 WatchDog，直接缩在托盘里，在后台记录走势",
+                    "登录 Windows 后自动打开 WatchCat，直接缩在托盘里，在后台记录走势",
                     "每 10 分钟检查一次（计划任务），超过上限且你空闲时自动处理；窗口关掉也照常运行",
-                    "程序更新、卡住被关掉、重启电脑恢复应用时，Windows 会把 WatchDog 重新打开（一直开着）",
+                    "程序更新、卡住被关掉、重启电脑恢复应用时，Windows 会把 WatchCat 重新打开（一直开着）",
                     "每天从 GitHub 取一次最新的专项修复规则（只下载规则文件，不上传任何东西）", "" };
                 const int nRow = 5;
                 Rectangle[] sw = new Rectangle[nRow];
@@ -134,7 +134,7 @@ namespace WatchDog
                     else if (hover == 1)
                     {
                         ToggleTask();
-                        msg = "正在" + (taskInstalled ? "取消" : "安装") + "后台看门狗，可能会弹出管理员确认，十几秒后这里会更新";
+                        msg = "正在" + (taskInstalled ? "取消" : "安装") + "后台看门猫，可能会弹出管理员确认，十几秒后这里会更新";
                         body.Invalidate();
                     }
                     else if (hover >= 10)
@@ -153,7 +153,7 @@ namespace WatchDog
                         body.Invalidate();
                     }
                 };
-                // 后台看门狗装好 / 取消后状态会变：每秒看一下
+                // 后台看门猫装好 / 取消后状态会变：每秒看一下
                 Timer t = new Timer(); t.Interval = 1000;
                 string last = state(0) + "|" + state(1) + "|" + state(3) + "|" + RulesUpdateText();
                 t.Tick += delegate { string now = state(0) + "|" + state(1) + "|" + state(3) + "|" + RulesUpdateText(); if (now != last) { last = now; body.Invalidate(); } };

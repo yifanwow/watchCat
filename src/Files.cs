@@ -1,4 +1,4 @@
-// 文件读写：JSON（规则、忽略记录）和 CSV（看门狗的历史记录）
+// 文件读写：JSON（规则、忽略记录）和 CSV（看门猫的历史记录）
 using System;
 using System.Collections;
 using System.Collections.Generic;

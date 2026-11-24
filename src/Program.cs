@@ -1,6 +1,6 @@
 // WatchDog 监控窗口：内存 / CPU / 磁盘 监控面板
 // 和任务管理器的区别：不只看"现在谁占得多"，而是看"谁在变坏、为什么、怎么修"——
-//   1. 稳定性评级：窗口打开 10 分钟后用实时数据给出初步判断；看门狗记录满 1 小时后给出长期判断（含疑似泄漏）
+//   1. 稳定性评级：窗口打开 10 分钟后用实时数据给出初步判断；看门猫记录满 1 小时后给出长期判断（含疑似泄漏）
 //   2. 问题规则库：rules.json（公共）+ rules.local.json（自己的）写明"症状 → 原因 → 修复方法"，命中就给出修复按钮
 // 每 5 秒刷新一次；点关闭缩到托盘，在后台继续记录。
 // 实时数据存在固定大小的环形缓存里（每条最多 1 小时 / 720 个点，最多 150 条），不会越用越大。
@@ -259,7 +259,7 @@ namespace WatchDog
             foreach (KeyValuePair<string, Rating> kv in ratings)
                 if (kv.Value.Text != "数据不足") o.AppendFormat("  {0}: {1}(级别 {2}) | {3} | {4} | {5}\r\n", kv.Key, kv.Value.Text, kv.Value.Level, kv.Value.Trend, kv.Value.Note, kv.Value.Forecast);
             o.AppendLine("主按钮: " + btnPrimary.Text);
-            o.AppendFormat("规则 {0} 条，监控 {1} 个，忽略 {2} 项，看门狗任务 {3}，历史记录 {4} 个程序 / 整机 {5} 条\r\n",
+            o.AppendFormat("规则 {0} 条，监控 {1} 个，忽略 {2} 项，看门猫任务 {3}，历史记录 {4} 个程序 / 整机 {5} 条\r\n",
                 rules.Count, watched.Count, ActiveIgnores().Count, taskInstalled ? "已安装" : "未安装", hist.Count, sys.Count);
         }
     }

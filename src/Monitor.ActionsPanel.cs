@@ -69,7 +69,7 @@ namespace WatchDog
                 StartShell("explorer.exe", "\"" + dir + "\"");
             });
             tIgnored = Tile(0, "", "已忽略", ShowIgnoredWindow);
-            tFolder = Tile(0, "", "设置", delegate { ShowSettingsWindow(); });   // 开机自动启动、后台看门狗、文件夹
+            tFolder = Tile(0, "", "设置", delegate { ShowSettingsWindow(); });   // 开机自动启动、后台看门猫、文件夹
 
             actions.Paint += PaintActions;
             actions.Resize += delegate { LayoutActions(); };
@@ -93,10 +93,10 @@ namespace WatchDog
         }
         static Rectangle Inflate(Rectangle r) { r.Inflate(2, 2); return r; }
 
-        // 安装 / 取消后台看门狗（计划任务），在设置窗口里用
+        // 安装 / 取消后台看门猫（计划任务），在设置窗口里用
         void ToggleTask()
         {
-            if (taskInstalled) { if (Ask("将删除看门狗计划任务，之后不再每 10 分钟自动检查和处理。确定吗？")) RunTool("Install-Watchdog.ps1", "-Uninstall"); else return; }
+            if (taskInstalled) { if (Ask("将删除看门猫计划任务，之后不再每 10 分钟自动检查和处理。确定吗？")) RunTool("Install-Watchdog.ps1", "-Uninstall"); else return; }
             else RunTool("Install-Watchdog.ps1", "");
             ReloadSoon(15);
         }
@@ -109,7 +109,7 @@ namespace WatchDog
             y += 52;
             tFixes.R = new Rectangle(x, y, w, 64);
             y += 72;
-            // 第一排 3 个，第二排 2 个（后台看门狗的开关在"设置"里）
+            // 第一排 3 个，第二排 2 个（后台看门猫的开关在"设置"里）
             ActTile[] small = { tRules, tLog, tReports, tIgnored, tFolder };
             int cw = (w - 12) / 3, hw = (w - 6) / 2;
             for (int i = 0; i < 3; i++) small[i].R = new Rectangle(x + i * (cw + 6), y, i == 2 ? w - 2 * (cw + 6) : cw, 32);
@@ -130,7 +130,7 @@ namespace WatchDog
 
             List<Rule> fx = allRules.Where(r => r.FixType != "none").ToList();
             int auto = fx.Count(r => !r.Disabled && r.Auto), over = fx.Count(r => !r.Disabled && OverLimit(r) >= 1);
-            // 看门狗日志：文件变了才重新读
+            // 看门猫日志：文件变了才重新读
             DateTime stamp = File.Exists(LogFile) ? File.GetLastWriteTimeUtc(LogFile) : DateTime.MinValue;
             if (stamp != actLogStamp)
             {
@@ -154,7 +154,7 @@ namespace WatchDog
             int nIg = ActiveIgnores().Count;
             tIgnored.Count = nIg > 0 ? nIg.ToString() : "";
             tReports.Count = incidents.Count > 0 ? incidents.Count.ToString() : "";
-            // 后台看门狗没装：设置按钮标红，提醒去设置里装上
+            // 后台看门猫没装：设置按钮标红，提醒去设置里装上
             tFolder.IconColor = taskInstalled ? cAccent : cRed;
             tFolder.Count = taskInstalled ? "" : "!";
             tRules.Count = allRules.Count > 0 ? allRules.Count.ToString() : "";

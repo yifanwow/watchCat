@@ -119,9 +119,9 @@ namespace WatchDog
         Panel side;
         BufferedPanel cardMem, cardCpu, cardDisk, cardKernel;
         BufferedPanel[] cardList;
-        CardData dog = new CardData { Tag = "WATCHDOG", Title = "看门狗", Mode = "dog" };   // 画在体检结论的上半部分
+        CardData dog = new CardData { Tag = "WATCHCAT", Title = "看门猫", Mode = "dog" };   // 画在体检结论的上半部分
         const int DogY = 34, DogH = 88;
-        BufferedListView lv, lvG;      // lvG：上面的"重点监控"小列表（看门狗专项修复在管的程序）
+        BufferedListView lv, lvG;      // lvG：上面的"重点监控"小列表（看门猫专项修复在管的程序）
         Panel watchBox; BufferedPanel watchHead; int watchHdrH = 26, watchRowH = 28;
         Dictionary<int, Bitmap> shieldBmp = new Dictionary<int, Bitmap>();
         ImageList rowH;
@@ -155,7 +155,7 @@ namespace WatchDog
 
         void BuildUI()
         {
-            Text = "WATCHDOG // 内存 · CPU · 磁盘 监控";
+            Text = "WATCHCAT // 内存 · CPU · 磁盘 监控";
             Rectangle wa = Screen.PrimaryScreen.WorkingArea;   // 屏幕够高就开高一点，右侧栏更宽松
             // 最小尺寸 1451 × 1029：在 2K 屏上实测再小就会挤（右侧栏、重点监控列表显示不全）。屏幕本身更小时以屏幕为准
             Size minS = new Size(Math.Min(1451, wa.Width), Math.Min(1029, wa.Height));
@@ -164,7 +164,7 @@ namespace WatchDog
             StartPosition = FormStartPosition.CenterScreen;
             Font = fCN; BackColor = cBg; ForeColor = cText;
             try { formIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); Icon = formIcon; } catch { }
-            // 标题栏左上角用原来的字母 W 图标（小图标）；任务栏 / Alt+Tab / 托盘用小狗（大图标、exe 图标）
+            // 标题栏左上角用原来的字母 W 图标（小图标）；任务栏 / Alt+Tab / 托盘用猫 logo（大图标、exe 图标）
             EventHandler capIcon = delegate
             {
                 if (capIconH == IntPtr.Zero) capIconH = LetterIcon(SystemInformation.SmallIconSize.Width);
@@ -199,7 +199,7 @@ namespace WatchDog
                 cardKernel.SetBounds(wm + 36 + 2 * ws, 0, cards.ClientSize.Width - (wm + 36 + 2 * ws), 136);
             };
 
-            // 右侧栏（从标题条一直到底）：当前用户 / 体检结论（含看门狗，按内容定高度）/ 选中程序（占剩下的）/ 操作。不会出现滚动条
+            // 右侧栏（从标题条一直到底）：当前用户 / 体检结论（含看门猫，按内容定高度）/ 选中程序（占剩下的）/ 操作。不会出现滚动条
             side = new Panel(); side.Dock = DockStyle.Right; side.Width = 372; side.BackColor = cBg; side.Padding = new Padding(0, 0, 12, 0);
             BuildProfile();
             diag = new BufferedPanel(); diag.Dock = DockStyle.Top; diag.Height = 300; diag.Cursor = Cursors.Hand;
@@ -287,9 +287,9 @@ namespace WatchDog
                 try { return b.GetHicon(); } catch { return IntPtr.Zero; }
             }
         }
-        // 小狗 logo：按网站图标（favicon.svg，64×64）画出来，只画一次缓存成位图
+        // 猫 logo：网站图标（favicon.svg，64×64）的尖耳朵脸 + 猫胡子，只画一次缓存成位图
         Bitmap logo;
-        static Bitmap DogLogo(int size)
+        static Bitmap CatLogo(int size)
         {
             Bitmap b = new Bitmap(size, size);
             using (Graphics g = Graphics.FromImage(b))
@@ -309,6 +309,12 @@ namespace WatchDog
                 g.DrawLines(cyan, new[] { new PointF(21, 33), new PointF(31, 38), new PointF(21, 42) });
                 g.DrawLines(cyan, new[] { new PointF(43, 33), new PointF(33, 38), new PointF(43, 42) });
                 g.DrawLine(cyan, 30, 48, 34, 48);
+                // 猫胡子：两边各两根，伸出脸外
+                using (Pen wh = new Pen(Color.FromArgb(150, 250, 255), 2f))
+                {
+                    g.DrawLine(wh, 15, 42, 3, 39); g.DrawLine(wh, 15, 46, 3, 48);
+                    g.DrawLine(wh, 49, 42, 61, 39); g.DrawLine(wh, 49, 46, 61, 48);
+                }
             }
             return b;
         }
@@ -317,14 +323,14 @@ namespace WatchDog
             Graphics g = e.Graphics; int w = header.Width, h = header.Height;
             g.FillRectangle(bBg, 0, 0, w, h);
             Scanlines(g, w, h);
-            // 小狗 logo（和网站 watchdog.yifanovo.com 的图标一样）
-            if (logo == null) logo = DogLogo(32);
+            // 猫 logo
+            if (logo == null) logo = CatLogo(32);
             g.DrawImage(logo, 12, 8, 32, 32);
             // 标题：红色错位的"故障"重影 + 荧光蓝本体
             const int tx = 50, dx = tx - 16;   // logo 占的宽度，后面的东西整体右移
-            if (tick % 6 == 3) Txt(g, "WATCHDOG", fHead, cRed, tx + 3, 8, 200, 34);
-            else Txt(g, "WATCHDOG", fHead, cRedDim, tx + 2, 7, 200, 34);
-            Txt(g, "WATCHDOG", fHead, cCyan, tx, 6, 200, 34);
+            if (tick % 6 == 3) Txt(g, "WATCHCAT", fHead, cRed, tx + 3, 8, 200, 34);
+            else Txt(g, "WATCHCAT", fHead, cRedDim, tx + 2, 7, 200, 34);
+            Txt(g, "WATCHCAT", fHead, cCyan, tx, 6, 200, 34);
             Txt(g, "// Which dream is your want", fTagB, cAccent, 152 + dx, 6, 260, 34);
             // 条形码 + 信号格（条形码每次刷新变一点，像在传数据）
             int bx = 420 + dx; uint seed = (uint)(tick * 2654435761u);
@@ -452,7 +458,7 @@ namespace WatchDog
         void PaintDiag(object s, PaintEventArgs e)
         {
             Graphics g = e.Graphics; int w = diag.Width, h = diag.Height;
-            Frame(g, w, h, "DIAGNOSIS", "体检结论 · 看门狗", false);
+            Frame(g, w, h, "DIAGNOSIS", "体检结论 · 看门猫", false);
             PaintDog(g, 12, DogY, w - 26, DogH);
             int vy = DogY + DogH + 8;
             Txt(g, verdict[0], fCNbig, LevelColor(int.Parse(verdict[1])), 14, vy, w - 28, 24);
@@ -478,7 +484,7 @@ namespace WatchDog
                 y += 38;
             }
             issueRects = rects;
-            // 剩下的空间：看门狗最近几次检查的记录（终端风格）
+            // 剩下的空间：看门猫最近几次检查的记录（终端风格）
             y += 6;
             if (sys.Count > 0 && y + 40 < h - 10)
             {
@@ -493,7 +499,7 @@ namespace WatchDog
                 }
             }
         }
-        // 看门狗：终端风格的小面板。左边黄黑警示条，中间是"心跳"——最近 90 分钟每次后台检查是一个脉冲（越高 = 那次跑得越久）
+        // 看门猫：终端风格的小面板。左边黄黑警示条，中间是"心跳"——最近 90 分钟每次后台检查是一个脉冲（越高 = 那次跑得越久）
         void PaintDog(Graphics g, int x, int y, int w, int h)
         {
             bool active = chartMode == "dog";
@@ -501,8 +507,8 @@ namespace WatchDog
             g.FillRectangle(bHaz, x, y, 7, h);
             g.DrawRectangle(active ? pCyanThin : pAccDim, x, y, w - 1, h - 1);
             int cx = x + 14, li = Lx(dog.Level);
-            Txt(g, "> WDG-04", fMono, cYellow, cx, y + 5, 64, 16);
-            Txt(g, "看门狗 · 后台巡检", fCN, cGray, cx + 62, y + 4, w - 170, 18);
+            Txt(g, "> CAT-04", fMono, cYellow, cx, y + 5, 64, 16);
+            Txt(g, "看门猫 · 后台巡检", fCN, cGray, cx + 62, y + 4, w - 170, 18);
             Badge(g, dog.Badge, li, x + w - 84, y + 4, 76, 18);
             Txt(g, dog.Value, fCNbig, LevelColor(dog.Level), cx, y + 24, 140, 26);
             // 心跳线
@@ -549,7 +555,7 @@ namespace WatchDog
                 if (e.X >= (int)r[5] && e.X < (int)r[5] + 44) { IgnoreIssue(key, title, false); return; }
                 if (e.X >= (int)r[6] && e.X < (int)r[6] + 44)
                 {
-                    if (Ask(string.Format("确认「{0}」是正常的？\n\n以后不再提醒这个问题；如果是规则发现的，看门狗也不会再自动处理它。可以随时在右键菜单或\"已忽略的问题\"里恢复。", title))) IgnoreIssue(key, title, true);
+                    if (Ask(string.Format("确认「{0}」是正常的？\n\n以后不再提醒这个问题；如果是规则发现的，看门猫也不会再自动处理它。可以随时在右键菜单或\"已忽略的问题\"里恢复。", title))) IgnoreIssue(key, title, true);
                     return;
                 }
             }
@@ -571,7 +577,7 @@ namespace WatchDog
             ProcRow r = null;
             if (name == null || !rows.TryGetValue(name, out r))
             {
-                Txt(g, "在左边列表里点选一个程序（或点上面的问题），这里显示它的稳定性、原因和修复方法。右键程序可以让看门狗专门监控它。", fCN, cGray, 14, 40, w - 28, 60, tfW);
+                Txt(g, "在左边列表里点选一个程序（或点上面的问题），这里显示它的稳定性、原因和修复方法。右键程序可以让看门猫专门监控它。", fCN, cGray, 14, 40, w - 28, 60, tfW);
                 return;
             }
             Bitmap icon = GetIcon(name);
@@ -580,8 +586,8 @@ namespace WatchDog
             Txt(g, name, fCNbig, cCyan, 56, 36, w - 70, 22);
             string sub = (HasNote(name) ? "✎ " : "") + (DescOf(name) ?? "-") + (r.Count > 1 ? " · " + r.Count + " 个进程" : "");
             Rule wr;
-            if (guarded.TryGetValue(name, out wr) && wr.MinMB > 0) sub += string.Format("  ·  看门狗在管：超过 {0:N0} MB {1}", wr.MinMB, wr.Auto && wr.FixType != "none" ? "且空闲时自动处理" : "时提醒");
-            else if (watched.TryGetValue(name, out wr)) sub += string.Format("  ·  ◉ 看门狗监控中（超过 {0} MB {1}）", wr.MinMB, wr.Auto ? "自动重启" : "提醒");
+            if (guarded.TryGetValue(name, out wr) && wr.MinMB > 0) sub += string.Format("  ·  看门猫在管：超过 {0:N0} MB {1}", wr.MinMB, wr.Auto && wr.FixType != "none" ? "且空闲时自动处理" : "时提醒");
+            else if (watched.TryGetValue(name, out wr)) sub += string.Format("  ·  ◉ 看门猫监控中（超过 {0} MB {1}）", wr.MinMB, wr.Auto ? "自动重启" : "提醒");
             if (FeedbackOf(name) == "bad") sub += "  ·  上次重启后不正常（右键可以建修复规则）";
             else if (IsBrowser(name)) sub += "  ·  浏览器：内存随网页涨落";
             Txt(g, sub, fCN, cGray, 56, 58, w - 70, 18);
@@ -720,7 +726,7 @@ namespace WatchDog
             g.DrawImage(Shield(worst, 24), 0, 3);
             Txt(g, "重点监控", fCNbig, cText, 30, 0, 100, h - 4);
             int x = 30 + TextRenderer.MeasureText("重点监控", fCNbig).Width + 4;
-            Txt(g, "// WATCHLIST  看门狗专项修复盯着的程序，出问题会被处理", fCN, cGray, x, 2, w - x - 430, h - 4);
+            Txt(g, "// WATCHLIST  看门猫专项修复盯着的程序，出问题会被处理", fCN, cGray, x, 2, w - x - 430, h - 4);
             Txt(g, string.Format("{0} 个程序（{1} 个自动处理） · {5} 正常 {2} · 黄 留意 {3} · 红 出问题 {4}", n, au, cnt[0], cnt[1], cnt[2], Theme.OkName), fCN, cGray, w - 430, 2, 430, h - 4, tfR);
             g.FillRectangle(bDimLine, 0, h - 2, w, 1);
             g.FillRectangle(bLv[Lx(worst)], 0, h - 3, 118, 3);
@@ -735,43 +741,30 @@ namespace WatchDog
             lv = Math.Max(lv, ResLevel(name));
             return Math.Min(2, Math.Max(0, lv));
         }
-        // 重点监控的标记：盾牌 + 交叉的两根骨头（看门狗盯着的"危险分子"）。蓝 = 正常，黄 = 需要留意，红 = 出问题。画一次缓存起来
+        // 重点监控的标记：黑色小方块里四个像素拼成的十字（中间空着）。颜色 = 等级：正常色 / 黄 = 需要留意 / 红 = 出问题。画一次缓存起来
         Bitmap Shield(int level, int s)
         {
             Bitmap b; int key = s * 4 + level;
             if (shieldBmp.TryGetValue(key, out b)) return b;
             b = Keep(new Bitmap(s, s));
             using (Graphics g = Graphics.FromImage(b))
-            using (GraphicsPath p = new GraphicsPath())
             {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                float l = s * 0.1f, r = s * 0.9f, t = s * 0.06f, sh = s * 0.14f, mid = s * 0.5f, bot = s * 0.96f;
-                p.AddLine(l, t + sh, mid, t); p.AddLine(mid, t, r, t + sh); p.AddLine(r, t + sh, r, s * 0.5f);
-                p.AddBezier(r, s * 0.5f, r, s * 0.74f, mid + s * 0.16f, s * 0.86f, mid, bot);
-                p.AddBezier(mid, bot, mid - s * 0.16f, s * 0.86f, l, s * 0.74f, l, s * 0.5f);
-                p.CloseFigure();
-                Color edge = level >= 2 ? cRed : level == 1 ? cYellow : cCyan;
-                using (SolidBrush f = new SolidBrush(Mix(cDeep, edge, 0.24))) g.FillPath(f, p);
-                using (Pen pe = new Pen(edge, Math.Max(1.3f, s / 13f))) g.DrawPath(pe, p);
-                Color bone = Color.FromArgb(244, 236, 218);
-                float bw = Math.Max(1.5f, s * 0.09f), kr = Math.Max(1.15f, s * 0.065f);
-                float x0 = s * 0.31f, x1 = s * 0.69f, y0 = s * 0.31f, y1 = s * 0.71f;
-                using (Pen bp = new Pen(bone, bw)) using (SolidBrush bb = new SolidBrush(bone))
-                { Bone(g, bp, bb, x0, y0, x1, y1, kr); Bone(g, bp, bb, x1, y0, x0, y1, kr); }
+                g.SmoothingMode = SmoothingMode.None;   // 像素风：不要抗锯齿
+                Color c = level >= 2 ? cRed : level == 1 ? cYellow : cCyan;
+                int gap = s >= 24 ? 2 : 1, cell = (s - 4 - 2 * gap) / 3, inner = cell * 3 + gap * 2, o = (s - inner) / 2;
+                using (SolidBrush tile = new SolidBrush(Color.FromArgb(4, 4, 4))) g.FillRectangle(tile, 0, 0, s, s);
+                using (Pen edge = new Pen(Mix(Color.Black, c, 0.45f), 1)) g.DrawRectangle(edge, 0, 0, s - 1, s - 1);
+                using (SolidBrush px = new SolidBrush(c))
+                {
+                    int step = cell + gap;
+                    g.FillRectangle(px, o + step, o, cell, cell);              // 上
+                    g.FillRectangle(px, o, o + step, cell, cell);              // 左
+                    g.FillRectangle(px, o + 2 * step, o + step, cell, cell);   // 右
+                    g.FillRectangle(px, o + step, o + 2 * step, cell, cell);   // 下
+                }
             }
             shieldBmp[key] = b;
             return b;
-        }
-        static void Bone(Graphics g, Pen p, Brush b, float x0, float y0, float x1, float y1, float kr)
-        {
-            g.DrawLine(p, x0, y0, x1, y1);
-            float dx = x1 - x0, dy = y1 - y0, len = (float)Math.Sqrt(dx * dx + dy * dy);
-            float px = -dy / len * kr * 0.85f, py = dx / len * kr * 0.85f;
-            foreach (PointF e in new[] { new PointF(x0, y0), new PointF(x1, y1) })
-            {
-                g.FillEllipse(b, e.X + px - kr, e.Y + py - kr, 2 * kr, 2 * kr);
-                g.FillEllipse(b, e.X - px - kr, e.Y - py - kr, 2 * kr, 2 * kr);
-            }
         }
         BufferedListView NewProcList()
         {
@@ -852,7 +845,7 @@ namespace WatchDog
                 Rule gr;
                 if (guarded.TryGetValue(it.Text, out gr))
                 {
-                    // 重点监控（看门狗专项修复在管）：名字右边一个交叉骨头的盾牌，左边一道细线。蓝 = 正常，黄 = 需要留意，红 = 出问题
+                    // 重点监控（看门猫专项修复在管）：名字右边一个交叉骨头的盾牌，左边一道细线。蓝 = 正常，黄 = 需要留意，红 = 出问题
                     int gl = GuardLevel(it.Text, gr);
                     if (!it.Selected) g.FillRectangle(bLv[Lx(gl)], r.X, r.Y + 6, 2, r.Height - 12);
                     g.DrawImage(Shield(gl, 18), r.Right - 22, r.Y + (r.Height - 18) / 2);
@@ -877,7 +870,7 @@ namespace WatchDog
             if (lv.Columns[n - 1].Width != want) lv.Columns[n - 1].Width = want;
         }
 
-        // ---------- 走势图：内存 / CPU / 磁盘 / 看门狗 / 选中的程序 ----------
+        // ---------- 走势图：内存 / CPU / 磁盘 / 看门猫 / 选中的程序 ----------
         Line RingLine(string key, int level, string label)
         {
             Ring r;
@@ -893,7 +886,7 @@ namespace WatchDog
             for (int i = 0; i < n; i++) { ln.T[i] = time(items[i]).ToUniversalTime().Ticks; ln.V[i] = val(items[i]); }
             return ln;
         }
-        // 长时间范围：看门狗的记录（10 分钟 / 1 小时一个点）后面接上窗口的实时数据（5 秒一个点），最右边一直是现在
+        // 长时间范围：看门猫的记录（10 分钟 / 1 小时一个点）后面接上窗口的实时数据（5 秒一个点），最右边一直是现在
         static Line Join(Line h, Line live)
         {
             if (live == null) return h;
@@ -912,17 +905,17 @@ namespace WatchDog
         ChartData GetChartData(string range)
         {
             ChartData d = GetChartData0(range);
-            if (RangeHours[range] > 1 && d.Lines.Count > 0 && d.Note.Length > 0 && !d.Note.StartsWith("窗口打开期间") && !d.Note.StartsWith("看门狗做什么"))
+            if (RangeHours[range] > 1 && d.Lines.Count > 0 && d.Note.Length > 0 && !d.Note.StartsWith("窗口打开期间") && !d.Note.StartsWith("看门猫做什么"))
                 d.Note += " · 最近一段接窗口的实时数据（5 秒一个点）";
             return d;
         }
         ChartData GetChartData0(string range)
         {
-            bool lng = RangeHours[range] > 1;   // 1 小时以内用窗口的实时数据（5 秒一个点），更长用看门狗的记录（10 分钟一个点）
-            bool week = range == "7d";          // 7 天：看门狗记录按小时汇总（每小时一个点）
+            bool lng = RangeHours[range] > 1;   // 1 小时以内用窗口的实时数据（5 秒一个点），更长用看门猫的记录（10 分钟一个点）
+            bool week = range == "7d";          // 7 天：看门猫记录按小时汇总（每小时一个点）
             ChartData d = new ChartData();
             const string live = "窗口打开期间每 5 秒一个点";
-            string rec = week ? "看门狗的记录，每小时一个点（程序取这一小时的最低值）" : "看门狗每 10 分钟记录一次", inst = week ? "看门狗的记录，每小时的平均值" : "看门狗检查时的瞬间值";
+            string rec = week ? "看门猫的记录，每小时一个点（程序取这一小时的最低值）" : "看门猫每 10 分钟记录一次", inst = week ? "看门猫的记录，每小时的平均值" : "看门猫检查时的瞬间值";
             List<SysRow> sys = week ? sysLong : this.sys;
             Dictionary<string, List<HistPt>> hist = week ? histLong : this.hist, histH = week ? histHLong : this.histH;
             switch (chartMode)
@@ -953,14 +946,14 @@ namespace WatchDog
                     else { d.Lines.Add(RingLine("sys:dr", 0, "读")); d.Lines.Add(RingLine("sys:dw", 1, "写")); }
                     break;
                 case "dog":
-                    d.Note = "看门狗做什么：每 10 分钟在后台运行约 5 秒 → ① 按规则检查，超过上限的自动修复  ② 记录各程序内存，用来判断稳定性 → 然后退出，不常驻内存";
-                    if (lng) { d.Title = "看门狗每次检查耗时"; d.Unit = "秒"; d.Lines.Add(HistLine(sys, x => x.T, x => x.RunMs / 1000, 0, "耗时")); }
+                    d.Note = "看门猫做什么：每 10 分钟在后台运行约 5 秒 → ① 按规则检查，超过上限的自动修复  ② 记录各程序内存，用来判断稳定性 → 然后退出，不常驻内存";
+                    if (lng) { d.Title = "看门猫每次检查耗时"; d.Unit = "秒"; d.Lines.Add(HistLine(sys, x => x.T, x => x.RunMs / 1000, 0, "耗时")); }
                     else { d.Title = "本监控窗口自身内存"; d.Unit = "MB"; d.Lines.Add(RingLine("sys:self", 0, "本窗口")); }
                     break;
                 case "kernel":
                     {
                         List<SysRow> k = sys.Where(x => x.HasKernel).ToList();
-                        if (lng && k.Count < 2) d.Msg = "看门狗从这个版本才开始记录内核内存和句柄总数（每 10 分钟一次），过一段时间就有了；可以先看\"30 分钟 / 1 小时\"的实时数据。";
+                        if (lng && k.Count < 2) d.Msg = "看门猫从这个版本才开始记录内核内存和句柄总数（每 10 分钟一次），过一段时间就有了；可以先看\"30 分钟 / 1 小时\"的实时数据。";
                         if (kernelMetric == "total")
                         {
                             d.Title = "全系统句柄总数"; d.Unit = "万"; d.Note = lng ? rec : live;
@@ -974,29 +967,29 @@ namespace WatchDog
                         break;
                     }
                 default:
-                    if (selected == null) { d.Note = "点选列表里的程序看它的内存走势；点上面的卡片看整机内存 / CPU / 磁盘 / 内核 / 看门狗"; break; }
+                    if (selected == null) { d.Note = "点选列表里的程序看它的内存走势；点上面的卡片看整机内存 / CPU / 磁盘 / 内核 / 看门猫"; break; }
                     string desc = DescOf(selected) ?? "-";
                     d.Title = selected + "  ·  " + desc; d.Note = lng ? rec : live;
                     if (procMetric == "hnd")
                     {
                         d.Unit = "个"; List<HistPt> hh; histH.TryGetValue(selected, out hh);
-                        if (lng && (hh == null || hh.Count < 2)) d.Msg = "看门狗只记录内存前 30 和句柄最多的 10 个程序的句柄数（从这个版本开始），这个程序还没有长期记录；请选\"30 分钟\"或\"1 小时\"。";
+                        if (lng && (hh == null || hh.Count < 2)) d.Msg = "看门猫只记录内存前 30 和句柄最多的 10 个程序的句柄数（从这个版本开始），这个程序还没有长期记录；请选\"30 分钟\"或\"1 小时\"。";
                         d.Lines.Add(lng ? Join(HistLine(hh, x => x.T, x => x.MB, 0, "句柄"), RingLine("hnd:" + selected, 0, "句柄")) : RingLine("hnd:" + selected, 0, "句柄"));
                         break;
                     }
                     if (procMetric == "gui")
                     {
                         d.Unit = "个"; d.Note = live + " · GDI / USER 单个进程上限各 1 万个";
-                        if (lng) d.Msg = "看门狗的记录里没有 GDI / USER（要额外开销），只有窗口的实时数据，请选\"30 分钟\"或\"1 小时\"。";
+                        if (lng) d.Msg = "看门猫的记录里没有 GDI / USER（要额外开销），只有窗口的实时数据，请选\"30 分钟\"或\"1 小时\"。";
                         else { d.Lines.Add(RingLine("gdi:" + selected, 0, "GDI")); d.Lines.Add(RingLine("usr:" + selected, 1, "USER")); }
                         break;
                     }
                     if (procMetric == "cpu" || procMetric == "io")
                     {
-                        // 看门狗的记录里每个程序只有内存，CPU / 读写只有窗口的实时数据
+                        // 看门猫的记录里每个程序只有内存，CPU / 读写只有窗口的实时数据
                         bool cpu = procMetric == "cpu";
                         d.Unit = cpu ? "%" : "MB/s"; d.Zero = true; d.Note = live;
-                        if (lng) d.Msg = "看门狗的记录里每个程序只记了内存；程序的 CPU 和读写只有窗口的实时数据，请选\"30 分钟\"或\"1 小时\"。";
+                        if (lng) d.Msg = "看门猫的记录里每个程序只记了内存；程序的 CPU 和读写只有窗口的实时数据，请选\"30 分钟\"或\"1 小时\"。";
                         else d.Lines.Add(RingLine((cpu ? "cpu:" : "io:") + selected, 0, cpu ? "CPU" : "读写"));
                         break;
                     }
@@ -1070,8 +1063,8 @@ namespace WatchDog
             if (lines.Count == 0)
             {
                 string msg = data.Msg != null ? data.Msg : chartMode == "proc" && selected == null ? data.Note
-                    : RangeHours[range] <= 1 ? "实时数据还不够：窗口每 5 秒记录一个点，稍等片刻；或者选\"3 小时\"以上，看看门狗的记录。"
-                    : "这段时间还没有看门狗的记录（每 10 分钟记录一次）。可以先看\"30 分钟 / 1 小时\"的实时数据，或者选更长的时间。";
+                    : RangeHours[range] <= 1 ? "实时数据还不够：窗口每 5 秒记录一个点，稍等片刻；或者选\"3 小时\"以上，看看门猫的记录。"
+                    : "这段时间还没有看门猫的记录（每 10 分钟记录一次）。可以先看\"30 分钟 / 1 小时\"的实时数据，或者选更长的时间。";
                 Txt(g, msg, fCN, cGray, 14, 44, w - 28, 40, tfW);
                 return;
             }
@@ -1156,7 +1149,7 @@ namespace WatchDog
             g.FillRectangle(bBg, 0, 0, w, h);
             g.DrawLine(pAccDim, 0, 0, w, 0);
             g.FillRectangle(bHaz, 12, 9, 22, 10);
-            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 骨头盾牌 = 重点监控（{4} 正常 / 黄 留意 / 红 出问题） · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
+            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 像素十字 = 重点监控（{4} 正常 / 黄 留意 / 红 出问题） · 点卡片 / 看门猫切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门猫监控它",
                 selfMB, selfCpu, selfGdi, series.Count, Theme.OkName);
             Txt(g, txt, fCN, cGray, 42, 0, w - 54, h);
         }
@@ -1298,9 +1291,9 @@ namespace WatchDog
             menuAnalyze = MenuItem(menu, "分析内存泄漏：它在忙什么、漏的是什么（管理员，约 1 分钟）", delegate { AnalyzeSelected(); });
             menuIncident = MenuItem(menu, "打开最近的现场记录 / 分析报告", delegate { OpenIncident(selected); });
             menu.Items.Add(new ToolStripSeparator());
-            menuWatch = MenuItem(menu, "◉ 用看门狗监控（超过上限时提醒）", delegate { AddWatch(selected, false); });
-            menuWatchA = MenuItem(menu, "◉ 用看门狗监控（超过上限时自动重启）", delegate { AddWatch(selected, true); });
-            menuUnwatch = MenuItem(menu, "取消看门狗监控", delegate { RemoveWatch(selected); });
+            menuWatch = MenuItem(menu, "◉ 用看门猫监控（超过上限时提醒）", delegate { AddWatch(selected, false); });
+            menuWatchA = MenuItem(menu, "◉ 用看门猫监控（超过上限时自动重启）", delegate { AddWatch(selected, true); });
+            menuUnwatch = MenuItem(menu, "取消看门猫监控", delegate { RemoveWatch(selected); });
             menuWizard = MenuItem(menu, "🛠 为它建修复规则（向导：选重启方式，先试一次）…", delegate { ShowRuleWizard(selected); });
             menuReport = MenuItem(menu, "📝 生成问题报告，发给开发者（不知道怎么处理时）…", delegate { MakeReport(selected); });
             menu.Items.Add(new ToolStripSeparator());
@@ -1308,7 +1301,7 @@ namespace WatchDog
             menuNormal = MenuItem(menu, "确认正常，不再提醒", delegate
             {
                 string[] i = IssueOf(selected);
-                if (i != null && Ask(string.Format("确认「{0}」是正常的？以后不再提醒；如果是规则发现的，看门狗也不会再自动处理它。", i[1]))) IgnoreIssue(i[0], i[1], true);
+                if (i != null && Ask(string.Format("确认「{0}」是正常的？以后不再提醒；如果是规则发现的，看门猫也不会再自动处理它。", i[1]))) IgnoreIssue(i[0], i[1], true);
             });
             menuRestore = MenuItem(menu, "恢复提醒", delegate { UnignoreName(selected); });
             menu.Opening += delegate(object s, System.ComponentModel.CancelEventArgs e)
@@ -1324,8 +1317,8 @@ namespace WatchDog
                 menuRestore.Visible = HasIgnore(n);
                 bool isW = watched.ContainsKey(n);
                 menuUnwatch.Visible = isW;
-                menuWatch.Text = isW ? "◉ 修改监控（超过上限时提醒）" : "◉ 用看门狗监控（超过上限时提醒）";
-                menuWatchA.Text = isW ? "◉ 修改监控（超过上限时自动重启）" : "◉ 用看门狗监控（超过上限时自动重启）";
+                menuWatch.Text = isW ? "◉ 修改监控（超过上限时提醒）" : "◉ 用看门猫监控（超过上限时提醒）";
+                menuWatchA.Text = isW ? "◉ 修改监控（超过上限时自动重启）" : "◉ 用看门猫监控（超过上限时自动重启）";
                 menuWatchA.Visible = !Protected.Contains(n);
                 menuWizard.Visible = !Protected.Contains(n);
             };
@@ -1340,9 +1333,9 @@ namespace WatchDog
         void BuildTray()
         {
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplayChanged;   // 静态事件：Dispose 里一定要取消，否则窗口对象永远释放不掉
-            tray = new NotifyIcon(); tray.Icon = formIcon ?? SystemIcons.Application; tray.Text = "WatchDog"; tray.Visible = true;
+            tray = new NotifyIcon(); tray.Icon = formIcon ?? SystemIcons.Application; tray.Text = "WatchCat"; tray.Visible = true;
             trayMenu = new ContextMenuStrip(); trayMenu.Renderer = menu.Renderer; trayMenu.Font = fCN;
-            ToolStripMenuItem open = MenuItem(trayMenu, "打开 WatchDog", delegate { ShowFromTray(); }); open.Font = fCNb;
+            ToolStripMenuItem open = MenuItem(trayMenu, "打开 WatchCat", delegate { ShowFromTray(); }); open.Font = fCNb;
             MenuItem(trayMenu, "退出", delegate { reallyExit = true; Close(); });
             tray.ContextMenuStrip = trayMenu;
             tray.MouseClick += delegate(object s, MouseEventArgs e) { if (e.Button == MouseButtons.Left) ShowFromTray(); };
@@ -1360,7 +1353,7 @@ namespace WatchDog
         void HideToTray()
         {
             Hide();
-            if (!trayTipShown) { trayTipShown = true; tray.ShowBalloonTip(3000, "WatchDog 在托盘里继续记录", "点托盘图标重新打开。要退出：右键托盘图标 → 退出。", ToolTipIcon.Info); }
+            if (!trayTipShown) { trayTipShown = true; tray.ShowBalloonTip(3000, "WatchCat 在托盘里继续记录", "点托盘图标重新打开。要退出：右键托盘图标 → 退出。", ToolTipIcon.Info); }
         }
         void ShowFromTray()
         {

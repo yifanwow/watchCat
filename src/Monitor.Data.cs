@@ -75,12 +75,12 @@ namespace WatchDog
             { "wallpaperui", "Wallpaper Engine 界面" }, { "lw", "Live2DViewerEX" }, { "SAO Utils", "SAO Utils 桌面" },
             { "StreamDeck", "Stream Deck" }, { "QQ", "QQ" }, { "QQMusic", "QQ 音乐" }, { "qmbrowser", "QQ 音乐内置浏览器" },
             { "ArmouryCrate", "华硕奥创中心" }, { "ROGLiveService", "ROG Live 服务" }, { "audiodg", "Windows 音频引擎" },
-            { "powershell", "PowerShell" }, { "WatchDog", "WatchDog 监控窗口（本程序）" }, { "MemCompression", "Windows 内存压缩（正常）" },
+            { "powershell", "PowerShell" }, { "WatchDog", "WatchCat 监控窗口（本程序）" }, { "MemCompression", "Windows 内存压缩（正常）" },
             { "System", "Windows 内核" }, { "CorsairCpuIdService", "海盗船 iCUE 读取 CPU 信息的服务" }, { "CorsairService", "海盗船后台服务" },
             { "ArmouryCrate.Service", "华硕奥创中心服务" }, { "Plex", "Plex 媒体服务器" }, { "SearchIndexer", "Windows 搜索索引" }, { "Taskmgr", "任务管理器" } };
 
         // 稳定性判断标准
-        // 长期（看门狗记录 ≥ 1 小时）
+        // 长期（看门猫记录 ≥ 1 小时）
         const double LeakSlopeMBh = 50, LeakGrowthMB = 100, LeakR2 = 0.6;    // 疑似泄漏
         const double RiseSlopeMBh = 15, RiseGrowthMB = 40, RiseR2 = 0.5;     // 缓慢上涨
         // 短期（窗口实时数据 ≥ 10 分钟）：只给初步判断，不下"泄漏"结论
@@ -133,7 +133,7 @@ namespace WatchDog
         double[] disk = { 0, 0, 0 };
         int tick;
 
-        // ---------- 看门狗历史（10 分钟一个点）的趋势，至少 1 小时 ----------
+        // ---------- 看门猫历史（10 分钟一个点）的趋势，至少 1 小时 ----------
         static Trend Analyze(List<HistPt> pts)
         {
             int n = pts.Count;
@@ -169,7 +169,7 @@ namespace WatchDog
             return null;
         }
 
-        // 看门狗记录：最近 24 小时用原始数据（10 分钟一个点，画图和 24 小时判断用）；
+        // 看门猫记录：最近 24 小时用原始数据（10 分钟一个点，画图和 24 小时判断用）；
         // 最多 7 天按小时汇总（每小时取最低值，看"底线"有没有一直往上抬），用来发现每小时只涨几 MB 的慢性泄漏、画 7 天走势。
         // 超过 25 小时的旧文件不会再变，按小时汇总后缓存起来，不再重读
         class FileAgg { public string Sig; public Dictionary<string, List<HistPt>> Mem = new Dictionary<string, List<HistPt>>(), Hnd = new Dictionary<string, List<HistPt>>(); public List<SysRow> Sys = new List<SysRow>(); }
@@ -404,7 +404,7 @@ namespace WatchDog
             Dictionary<string, Rule> w = new Dictionary<string, Rule>();
             foreach (Rule r in all) if (r.Id.StartsWith("watch-") && r.Process != null) w[r.Process] = r;
             watched = w;
-            // 看门狗在管的程序（启用、有修复方法的规则）：列表里名字旁边画盾牌
+            // 看门猫在管的程序（启用、有修复方法的规则）：列表里名字旁边画盾牌
             Dictionary<string, Rule> gd = new Dictionary<string, Rule>(StringComparer.OrdinalIgnoreCase);
             foreach (Rule r in all)
                 if (r.FixType != "none")
@@ -683,7 +683,7 @@ namespace WatchDog
         }
 
         // 稳定性评级。Level：2 = 有问题（红）、1 = 需要留意（黄）、0 = 正常（蓝）、-1 = 中性（灰）。Score 用于"问题优先"排序。
-        // 优先用看门狗的长期记录（≥ 1 小时）；没有的话用窗口的实时数据（≥ 10 分钟）给初步判断。
+        // 优先用看门猫的长期记录（≥ 1 小时）；没有的话用窗口的实时数据（≥ 10 分钟）给初步判断。
         Rating GetRatingRaw(string name, double mb)
         {
             Rating r = GetRatingBase(name, mb);
@@ -812,7 +812,7 @@ namespace WatchDog
         void LoadLive()
         {
             if (!File.Exists(LiveFile)) return;
-            long minT = DateTime.UtcNow.AddSeconds(-5 * RingSize).Ticks;   // 只读回最近 1 小时内的点（再早的走势图用看门狗的记录）
+            long minT = DateTime.UtcNow.AddSeconds(-5 * RingSize).Ticks;   // 只读回最近 1 小时内的点（再早的走势图用看门猫的记录）
             try
             {
                 using (FileStream fs = File.OpenRead(LiveFile))

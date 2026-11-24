@@ -16,7 +16,7 @@ namespace WatchDog
         Form NewWindow(string tag, string title, int w, int h, out BufferedPanel body)
         {
             Form f = new Form();
-            f.Text = "WATCHDOG // " + title; f.ClientSize = new Size(w, h);
+            f.Text = "WATCHCAT // " + title; f.ClientSize = new Size(w, h);
             f.StartPosition = Visible && WindowState != FormWindowState.Minimized ? FormStartPosition.CenterParent : FormStartPosition.CenterScreen;
             f.FormBorderStyle = FormBorderStyle.FixedSingle; f.MaximizeBox = false; f.MinimizeBox = false; f.ShowInTaskbar = false;
             f.BackColor = cBg; f.ForeColor = cText; f.Font = fCN; f.KeyPreview = true;
@@ -55,7 +55,7 @@ namespace WatchDog
                 case "wizard": ShowRuleWizard(pick ?? "lghub_agent"); break;
                 case "reportfile": File.WriteAllText(file, WriteReport(pick ?? "lghub_agent")); break;   // 自测：生成问题报告，把报告路径写进 file
                 case "ask": Ask("将结束 lghub_agent（1 个进程）并重新打开：\nC:\\Program Files\\LGHUB\\lghub_agent.exe\n\n这个程序里没保存的内容可能会丢失。确定吗？"); break;
-                case "prompt": Prompt("监控这个程序", "让看门狗监控 CorsairCpuIdService（现在 52 MB）。\n\n内存超过多少 MB 时提醒你？", "500"); break;
+                case "prompt": Prompt("监控这个程序", "让看门猫监控 CorsairCpuIdService（现在 52 MB）。\n\n内存超过多少 MB 时提醒你？", "500"); break;
             }
             snapFile = null; snapPick = null;
         }
@@ -165,7 +165,7 @@ namespace WatchDog
             catch { }
             return o;
         }
-        // 看门狗日志里的英文核对结果，翻成一句中文
+        // 看门猫日志里的英文核对结果，翻成一句中文
         static string CheckText(string s)
         {
             if (s == null) return "";
@@ -176,7 +176,7 @@ namespace WatchDog
             if (s.StartsWith("CHECK FAILED")) return "核对失败：" + s.Substring(Math.Min(s.Length, 15)).Replace("not running", "没在运行").Replace("service not running", "服务没在运行").Replace("log not updated", "日志没更新");
             return s;
         }
-        // 某条规则最近一次的动作（来自看门狗日志）
+        // 某条规则最近一次的动作（来自看门猫日志）
         string LastActionOf(string id, List<string[]> log)
         {
             for (int i = log.Count - 1; i >= 0; i--)
@@ -229,13 +229,13 @@ namespace WatchDog
             rulesSig = ""; LoadRules();
             const int w = 1100, h = 750;
             BufferedPanel body;
-            using (Form f = NewWindow("RULES", "看门狗的规则", w, h, out body))
+            using (Form f = NewWindow("RULES", "看门猫的规则", w, h, out body))
             {
                 List<string[]> log = ReadActionLog();
                 Rule cur = null;
                 body.Paint += (s, e) =>
                 {
-                    Txt(e.Graphics, "看门狗每 10 分钟在后台检查一次：程序超过上限时，按下面的规则处理。\"自动处理\"的规则只在你空闲时动手，处理完会核对是不是都恢复了。改动存在你自己的 rules.local.json，不改 rules.json。新加监控：右键程序 → 用看门狗监控。",
+                    Txt(e.Graphics, "看门猫每 10 分钟在后台检查一次：程序超过上限时，按下面的规则处理。\"自动处理\"的规则只在你空闲时动手，处理完会核对是不是都恢复了。改动存在你自己的 rules.local.json，不改 rules.json。新加监控：右键程序 → 用看门猫监控。",
                         fCN, cGray, 22, 40, w - 44, 36, tfW);
                     if (cur == null) { Txt(e.Graphics, "在上面选一条规则查看和修改。", fCN, cGray, 22, 396, w - 44, 20); return; }
                     Txt(e.Graphics, cur.Title, fCNbig, cCyan, 22, 392, w - 200, 24);
@@ -309,7 +309,7 @@ namespace WatchDog
                     if (!double.TryParse(tbIdle.Text.Trim(), out idle) || idle < 0) { Say("空闲时间请填一个数字（分钟），0 表示随时。"); return; }
                     try { SaveRuleEdit(cur, mb, idle, editAuto, !editOn); } catch (Exception ex) { Say("保存失败：" + ex.Message); return; }
                     log = ReadActionLog(); fill(); select();
-                    Say("已保存。看门狗下次检查（最多 10 分钟）就会按新的设置来。");
+                    Say("已保存。看门猫下次检查（最多 10 分钟）就会按新的设置来。");
                 };
                 bReset.Click += delegate
                 {
@@ -361,7 +361,7 @@ namespace WatchDog
             BufferedPanel body;
             using (Form f = NewWindow("FIX LOG", "自动修复记录", w, h, out body))
             {
-                body.Paint += (s, e) => Txt(e.Graphics, "看门狗做过的事（最新的在上面）。\"处理完成\"一行写着处理前 → 后的内存和核对结果；句柄现场记录 / 内存分析可以双击打开。",
+                body.Paint += (s, e) => Txt(e.Graphics, "看门猫做过的事（最新的在上面）。\"处理完成\"一行写着处理前 → 后的内存和核对结果；句柄现场记录 / 内存分析可以双击打开。",
                     fCN, cGray, 22, 40, w - 44, 20);
                 BufferedListView l = NewList(body, new Rectangle(14, 66, w - 28, h - 66 - 62),
                     new object[,] { { "时间", 150 }, { "做了什么", 110 }, { "规则 / 程序", 260 }, { "内存 前 → 后", 150 }, { "结果", 300 } },
@@ -405,7 +405,7 @@ namespace WatchDog
                 items.Reverse();
                 l.Items.AddRange(items.Take(300).ToArray());
                 l.DoubleClick += delegate { if (l.SelectedItems.Count > 0) { string fp = l.SelectedItems[0].Tag as string; if (fp != null && File.Exists(fp)) StartShell("notepad.exe", "\"" + fp + "\""); } };
-                if (items.Count == 0) l.Items.Add(new ListViewItem(new[] { "（还没有记录）", "", "看门狗只在程序超过上限、而且你空闲 10 分钟以上时才处理", "", "" }));
+                if (items.Count == 0) l.Items.Add(new ListViewItem(new[] { "（还没有记录）", "", "看门猫只在程序超过上限、而且你空闲 10 分钟以上时才处理", "", "" }));
                 NewBtn(body, "打开日志文件", 22, h - 52, 150, delegate { if (File.Exists(LogFile)) StartShell("notepad.exe", "\"" + LogFile + "\""); }, false);
                 NewBtn(body, "规则", 180, h - 52, 100, delegate { f.Close(); ShowRulesWindow(null); }, false);
                 NewBtn(body, "关闭", w - 22 - 100, h - 52, 100, delegate { f.Close(); }, false);
@@ -420,7 +420,7 @@ namespace WatchDog
             BufferedPanel body;
             using (Form f = NewWindow("IGNORED", "已忽略的问题", w, h, out body))
             {
-                body.Paint += (s, e) => Txt(e.Graphics, "这些问题现在不会提醒；规则发现的问题，看门狗也不会自动处理。选中一条点\"恢复提醒\"。", fCN, cGray, 22, 40, w - 44, 20);
+                body.Paint += (s, e) => Txt(e.Graphics, "这些问题现在不会提醒；规则发现的问题，看门猫也不会自动处理。选中一条点\"恢复提醒\"。", fCN, cGray, 22, 40, w - 44, 20);
                 BufferedListView l = NewList(body, new Rectangle(14, 66, w - 28, h - 66 - 62),
                     new object[,] { { "问题", 420 }, { "状态", 200 } },
                     (it, col) => it.Tag == null ? cGray : col == 1 ? (it.SubItems[1].Text.StartsWith("已确认") ? cCyan : cYellow) : cText);

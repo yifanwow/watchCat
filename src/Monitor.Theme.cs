@@ -12,7 +12,7 @@ namespace WatchDog
     class Palette
     {
         public string Id, Name, Desc, OkName;   // OkName：正常色叫什么（界面上"蓝 正常"这类说明用）
-        public Color Bg, Panel, RowA, RowB, Deep,            // 底色、面板、列表两种行底、最深的底（看门狗小面板、输入区）
+        public Color Bg, Panel, RowA, RowB, Deep,            // 底色、面板、列表两种行底、最深的底（看门猫小面板、输入区）
             Ok, Warn, Bad,                                   // 三个等级：正常 / 留意 / 出问题（也是图表、徽章、开关的颜色）
             Accent, AccentDim, Text, Gray, Dim, Haz,         // 强调色（边框、标题）、暗强调（分隔线）、文字、次要文字、暗块、警示条
             Sel, SelDown, Row1, Row2,                        // 选中 / 按下、"留意"和"出问题"行的底色

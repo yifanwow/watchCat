@@ -39,10 +39,10 @@ namespace WatchDog
             StringBuilder o = new StringBuilder();
             Action<string> L = s => o.Append(s).Append("\r\n");
 
-            L("# WatchDog 问题报告：" + name);
+            L("# WatchCat 问题报告：" + name);
             L("");
             L("生成时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
-            L("WatchDog：" + File.GetLastWriteTime(Application_Path()).ToString("yyyy-MM-dd") + " 编译");
+            L("WatchCat：" + File.GetLastWriteTime(Application_Path()).ToString("yyyy-MM-dd") + " 编译");
             L("系统：" + osName + " · 内存 " + string.Format("{0:N0} GB", Native.Mem().ullTotalPhys / 1073741824.0) + " · CPU " + cpuName + " · 显卡 " + gpuName);
             L("");
             L("## 程序");
@@ -66,7 +66,7 @@ namespace WatchDog
             else L("- 现在：没在运行");
             L("");
 
-            L("## WatchDog 的判断");
+            L("## WatchCat 的判断");
             Rating rt = GetRating(name, row != null ? row.PrivMB : 0);
             L("- 稳定性：" + rt.Text + " · " + rt.Note);
             if (rt.Trend.Length > 0) L("- 变化：" + rt.Trend);
@@ -85,7 +85,7 @@ namespace WatchDog
             L("");
 
             L("## 内存走势");
-            AppendSeries(o, "最近 24 小时（看门狗每 10 分钟记录一次，这里每小时取一个点）", hist, name, 1);
+            AppendSeries(o, "最近 24 小时（看门猫每 10 分钟记录一次，这里每小时取一个点）", hist, name, 1);
             AppendSeries(o, "最近 7 天（每小时的最低值，这里每 6 小时取一个点）", histLong, name, 6);
             AppendSeries(o, "句柄数，最近 24 小时（每小时一个点）", histH, name, 1);
             L("");
@@ -104,7 +104,7 @@ namespace WatchDog
             catch { }
             if (logLines.Count > 0)
             {
-                L("## 看门狗的记录（最近 " + logLines.Count + " 条）");
+                L("## 看门猫的记录（最近 " + logLines.Count + " 条）");
                 foreach (string ln in Enumerable.Reverse(logLines)) L("    " + ln);
                 L("");
             }

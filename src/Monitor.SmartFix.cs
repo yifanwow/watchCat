@@ -579,7 +579,7 @@ namespace WatchDog
             string text = Json.Write(rule);
             string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             if (home.Length > 3) text = text.Replace(home.Replace("\\", "\\\\"), "%USERPROFILE%");
-            try { Clipboard.SetText("分享一条 WatchDog 规则（在我的电脑上试过有效）：\n\n```json\n" + text + "\n```\n"); } catch { }
+            try { Clipboard.SetText("分享一条 WatchCat 规则（在我的电脑上试过有效）：\n\n```json\n" + text + "\n```\n"); } catch { }
             StartShell("https://github.com/yifanwow/watchDog/issues/new", "");
         }
 
@@ -616,7 +616,7 @@ namespace WatchDog
                 {
                     ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
                     HttpWebRequest req = (HttpWebRequest)WebRequest.Create(RulesUrl);
-                    req.Timeout = 15000; req.ReadWriteTimeout = 15000; req.UserAgent = "WatchDog-rules-updater";
+                    req.Timeout = 15000; req.ReadWriteTimeout = 15000; req.UserAgent = "WatchCat-rules-updater";
                     string text;
                     using (WebResponse resp = req.GetResponse())
                     using (StreamReader sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8)) text = sr.ReadToEnd();

@@ -80,7 +80,7 @@ namespace WatchDog
                 string.Format("已提交 {0:N1} / {1:N0} GB（含虚拟内存）", commitGB, limitGB), pct);
             Record("sys:mem", usedGB, nowU);
             string memExtra = string.Format("可用 {0:N1} GB · 70% 以下都算正常", m.ullAvailPhys / 1073741824.0);
-            if (tray != null) tray.Text = string.Format("WatchDog · 内存 {0:N1} / {1:N0} GB ({2:N0}%)", usedGB, totalGB, pct);
+            if (tray != null) tray.Text = string.Format("WatchCat · 内存 {0:N1} / {1:N0} GB ({2:N0}%)", usedGB, totalGB, pct);
 
             // 进程采样 + 规则
             double cpuNow = Native.Cpu();
@@ -141,9 +141,9 @@ namespace WatchDog
             }
             Record("sys:self", selfMB, nowU);
 
-            // 看门狗 + 自身占用
+            // 看门猫 + 自身占用
             SysRow last = sys.Count > 0 ? sys[sys.Count - 1] : null;
-            if (!taskInstalled) SetDog("未安装", "离线", 1, "看门狗还没安装：点右下角\"设置\"里的后台看门狗开关", -1);
+            if (!taskInstalled) SetDog("未安装", "离线", 1, "看门猫还没安装：点右下角\"设置\"里的后台看门猫开关", -1);
             else if (last == null) SetDog("等待首次检查", "待命", 1, "安装好了，等第一次检查（最多 10 分钟）", -1);
             else
             {
@@ -160,7 +160,7 @@ namespace WatchDog
             HashSet<string> inList = new HashSet<string>(list.Select(r => r.Name));
             foreach (ProcRow r in all)
                 if (!inList.Contains(r.Name) && (ratings[r.Name].Level >= 1 || ResLevel(r.Name) >= 1 || r.IoMBs >= HeavyIoMBs || watched.ContainsKey(r.Name))) { list.Add(r); inList.Add(r.Name); }
-            // 看门狗专项修复在管的程序放到上面的"重点监控"小列表；同一个进程的服务名（svc:）和进程名只留进程名
+            // 看门猫专项修复在管的程序放到上面的"重点监控"小列表；同一个进程的服务名（svc:）和进程名只留进程名
             List<ProcRow> top = all.Where(r => guarded.ContainsKey(r.Name)).ToList();
             top = top.Where(r => !(r.Name.StartsWith("svc:") && top.Any(o => o != r && o.Pid == r.Pid && !o.Name.StartsWith("svc:")))).ToList();
             list = SortRows(list.Where(r => !guarded.ContainsKey(r.Name)).ToList());
@@ -266,7 +266,7 @@ namespace WatchDog
                 : nWarn > 0 ? new[] { "有 " + nWarn + " 项需要留意", "1", basis }
                 : nLong + nShort == 0 ? new[] { "数据收集中", "1", "窗口打开满 10 分钟后给出初步判断" }
                 : new[] { "电脑健康", "0", basis };
-            if (lastAction.Length > 0 && list.Count < 3) list.Add(NewIssue("看门狗最近一次动作", lastAction, -1, null, null));
+            if (lastAction.Length > 0 && list.Count < 3) list.Add(NewIssue("看门猫最近一次动作", lastAction, -1, null, null));
             issues = list;
             LayoutSide();
             diag.Invalidate();
@@ -285,7 +285,7 @@ namespace WatchDog
         {
             try { Process.Start(new ProcessStartInfo(file, args) { UseShellExecute = true }).Dispose(); } catch { }
         }
-        // 看门狗、修复脚本仍是 PowerShell 脚本（只在需要时运行几秒）
+        // 看门猫、修复脚本仍是 PowerShell 脚本（只在需要时运行几秒）
         void RunTool(string file, string args)
         {
             StartShell("powershell.exe", string.Format("-NoProfile -ExecutionPolicy Bypass -File \"{0}\" {1}", Path.Combine(ToolDir, file), args));
@@ -418,7 +418,7 @@ namespace WatchDog
             finally { if (svc != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(svc); }
         }
 
-        // ---- 个人规则文件（rules.local.json）读写：右键"用看门狗监控"就是往这里加一条规则 ----
+        // ---- 个人规则文件（rules.local.json）读写：右键"用看门猫监控"就是往这里加一条规则 ----
         string LocalRulesPath { get { return Path.Combine(RulesDir, "rules.local.json"); } }
         List<Dictionary<string, object>> ReadLocalRules()
         {
@@ -438,7 +438,7 @@ namespace WatchDog
             int def = (int)(Math.Ceiling(Math.Max(cur * 1.5, cur + 300) / 100) * 100);
             string what = auto ? "自动重启它" : "提醒你";
             string ans = Prompt("监控这个程序",
-                string.Format("让看门狗监控 {0}（现在 {1:N0} MB）。\n\n内存超过多少 MB 时{2}？\n\n看门狗每 10 分钟检查一次，也会专门记录它的内存走势。", name, cur, what), def.ToString());
+                string.Format("让看门猫监控 {0}（现在 {1:N0} MB）。\n\n内存超过多少 MB 时{2}？\n\n看门猫每 10 分钟检查一次，也会专门记录它的内存走势。", name, cur, what), def.ToString());
             if (string.IsNullOrEmpty(ans)) return;
             int limit;
             if (!int.TryParse(ans.Trim(), out limit) || limit <= 0) { Say("请输入一个正整数（单位 MB）。"); return; }
@@ -453,7 +453,7 @@ namespace WatchDog
             rule["cause"] = "你在监控窗口里设置的：内存超过 " + limit + " MB 时" + what + "。"; rule["fix"] = fix; rule["auto"] = auto;
             list.Add(rule);
             try { WriteLocalRules(list); } catch (Exception ex) { Say("保存 rules.local.json 失败：" + ex.Message); return; }
-            Say(string.Format("已加入看门狗监控：{0} 超过 {1} MB 时{2}。\n规则保存在 rules.local.json，可以随时在右键菜单里取消。", name, limit, what));
+            Say(string.Format("已加入看门猫监控：{0} 超过 {1} MB 时{2}。\n规则保存在 rules.local.json，可以随时在右键菜单里取消。", name, limit, what));
             RefreshAll();
         }
         void RemoveWatch(string name)

@@ -80,7 +80,7 @@ namespace WatchDog
         void EvalKernel()
         {
             int lvl = 0; string badge = "正常", why = "", title = null;
-            // 1. 长期（看门狗记录，本次开机以来）。最近 3 / 6 / 12 小时也单独算一遍：
+            // 1. 长期（看门猫记录，本次开机以来）。最近 3 / 6 / 12 小时也单独算一遍：
             //    开机好几天后才开始漏的，放在整段里会被前面平稳的几天冲淡
             DateTime boot = DateTime.Now - TimeSpan.FromMilliseconds(Native.GetTickCount64());
             List<SysRow> rowsK = sysLong.Where(x => x.HasKernel && x.T >= boot.AddMinutes(10) && x.T < DateTime.Now.AddHours(-24)).Concat(sys.Where(x => x.HasKernel && x.T >= boot.AddMinutes(10))).ToList();
@@ -158,7 +158,7 @@ namespace WatchDog
                     int l = r.GuiMax >= 3000 ? 2 : 1;
                     if (l > lvl) { lvl = l; title = label + " 的图形资源在一直涨"; sub = string.Format("近 {0:N0} 分钟 +{1:N0} 个，现在 {2}（上限 1 万）· {3}", sgu[3] * 60, sgu[2], gui, fix); }
                 }
-                // 句柄：长期记录（看门狗）
+                // 句柄：长期记录（看门猫）
                 Trend a; List<HistPt> hl;
                 if (analysisH.TryGetValue(r.Name, out a) && histH.TryGetValue(r.Name, out hl) && hl.Count > 0 && r.Handles >= 0.6 * hl[hl.Count - 1].MB && a.Span >= 2)
                 {

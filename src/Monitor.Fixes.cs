@@ -1,5 +1,5 @@
 // 专项修复：所有"针对某个程序"的泄漏修复放在一个列表里（一个程序一张卡片）
-// 每张卡片：这个程序现在多大、上限多少、为什么会涨、怎么修、看门狗最近一次做了什么；可以立即修复、改设置、看分析报告
+// 每张卡片：这个程序现在多大、上限多少、为什么会涨、怎么修、看门猫最近一次做了什么；可以立即修复、改设置、看分析报告
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -64,7 +64,7 @@ namespace WatchDog
                     int auto = list.Count(r => !r.Disabled && r.Auto), over = list.Count(r => !r.Disabled && OverLimit(r) >= 1);
                     string last = ""; int fixes = 0;
                     foreach (string[] x in log) if (x[1] == "DONE") { fixes++; last = x[0].Substring(5, 11); }
-                    string[,] stats = { { list.Count.ToString(), "个程序有专项修复" }, { auto.ToString(), "个由看门狗自动处理" }, { over.ToString(), "个现在超过上限" }, { fixes.ToString(), last.Length > 0 ? "次自动处理 · 最近 " + last : "次自动处理" } };
+                    string[,] stats = { { list.Count.ToString(), "个程序有专项修复" }, { auto.ToString(), "个由看门猫自动处理" }, { over.ToString(), "个现在超过上限" }, { fixes.ToString(), last.Length > 0 ? "次自动处理 · 最近 " + last : "次自动处理" } };
                     int sw = (w - 28 - 3 * 10) / 4;
                     for (int i = 0; i < 4; i++)
                     {
@@ -75,7 +75,7 @@ namespace WatchDog
                         Txt(g, stats[i, 0], fNum, c, x + 14, y + 4, 70, 44);
                         Txt(g, stats[i, 1], fCN, cGray, x + 14 + TxtW(g, stats[i, 0], fNum) + 6, y + 4, sw - 90, 44);
                     }
-                    Txt(g, "这些程序都查过根因，会一直慢慢涨。看门狗每 10 分钟检查一次：超过上限、而且你空闲时，只重启出问题的那一小块，再核对是不是都恢复了（灯效、设备、Steam 本身都不动）。",
+                    Txt(g, "这些程序都查过根因，会一直慢慢涨。看门猫每 10 分钟检查一次：超过上限、而且你空闲时，只重启出问题的那一小块，再核对是不是都恢复了（灯效、设备、Steam 本身都不动）。",
                         fCN, cGray, 22, 102, w - 44, 40, tfW);
                 };
                 Panel scroll = new Panel(); scroll.SetBounds(14, 150, w - 28, viewH); scroll.AutoScroll = true; scroll.BackColor = cBg;
@@ -98,7 +98,7 @@ namespace WatchDog
                     NewBtn(content, "立即修复", x + cardW - 14 - 108 - 8 - 70, y, 108, delegate
                     {
                         Hit hit = new Hit(); hit.Rule = r; hit.Target = r.Target;
-                        if (ApplyFix(hit, false)) Say("已开始：" + r.FixLabel + "。\n\n大约半分钟后完成；看门狗下次检查时会按规则核对。");
+                        if (ApplyFix(hit, false)) Say("已开始：" + r.FixLabel + "。\n\n大约半分钟后完成；看门猫下次检查时会按规则核对。");
                     }, true);
                     NewBtn(content, "设置", x + cardW - 14 - 70, y, 70, delegate
                     {
@@ -213,7 +213,7 @@ namespace WatchDog
 
             // 最近一次
             string last = LastActionOf(r.Id, log);
-            Txt(g, last.Length > 0 ? "最近：" + last : "看门狗还没处理过它", fCN, last.Contains("失败") ? cRed : last.Length > 0 ? cCyan : cGray,
+            Txt(g, last.Length > 0 ? "最近：" + last : "看门猫还没处理过它", fCN, last.Contains("失败") ? cRed : last.Length > 0 ? cCyan : cGray,
                 x, b.Bottom - 40, wIn - 300, 26);
         }
     }
