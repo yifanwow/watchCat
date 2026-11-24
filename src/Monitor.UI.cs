@@ -167,10 +167,10 @@ namespace WatchDog
             StartPosition = FormStartPosition.CenterScreen;
             Font = fCN; BackColor = cBg; ForeColor = cText;
             try { formIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); Icon = formIcon; } catch { }
-            // 标题栏左上角用原来的字母 W 图标（小图标）；任务栏 / Alt+Tab / 托盘用猫 logo（大图标、exe 图标）
+            // 标题栏左上角的小图标：像素猫 logo 裁掉四周留白再缩小（直接用 exe 图标缩到 16 像素会糊成一团）
             EventHandler capIcon = delegate
             {
-                if (capIconH == IntPtr.Zero) capIconH = LetterIcon(SystemInformation.SmallIconSize.Width);
+                if (capIconH == IntPtr.Zero) capIconH = LogoSmallIcon(SystemInformation.SmallIconSize.Width);
                 if (capIconH != IntPtr.Zero) Native.SendMessage(Handle, 0x80, IntPtr.Zero, capIconH);   // WM_SETICON, ICON_SMALL
             };
             HandleCreated += capIcon; Shown += capIcon;
@@ -268,6 +268,23 @@ namespace WatchDog
         // ---------- 标题条 ----------
         // 标题栏用的字母 W 小图标：红黑底、珊瑚红切角框、荧光蓝 W（和最早的程序图标一样）
         IntPtr capIconH;
+        static IntPtr LogoSmallIcon(int s)
+        {
+            try
+            {
+                using (Bitmap grid = LoadLogo())
+                using (Bitmap b = new Bitmap(s, s))
+                {
+                    using (Graphics g = Graphics.FromImage(b))
+                    {
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        g.DrawImage(grid, new Rectangle(0, 0, s, s), new Rectangle(4, 4, 41, 41), GraphicsUnit.Pixel);   // 48 格里猫脸大约在 (5,8)–(44,40)
+                    }
+                    return b.GetHicon();
+                }
+            }
+            catch { return LetterIcon(s); }
+        }
         static IntPtr LetterIcon(int s)
         {
             using (Bitmap b = new Bitmap(s, s))

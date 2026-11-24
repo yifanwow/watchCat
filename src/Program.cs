@@ -19,6 +19,15 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
+// 文件属性 / 任务管理器 / 开始菜单搜索里显示的名字（exe 文件名为了兼容暂时还叫 WatchDog.exe）
+[assembly: System.Reflection.AssemblyTitle("WatchCat")]
+[assembly: System.Reflection.AssemblyProduct("WatchCat")]
+[assembly: System.Reflection.AssemblyDescription("WatchCat 看门猫 · 内存泄漏体检和修复")]
+[assembly: System.Reflection.AssemblyCompany("yifanovo")]
+[assembly: System.Reflection.AssemblyCopyright("yifanovo.com")]
+[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.0.0")]
+
 namespace WatchDog
 {
     static class Program
