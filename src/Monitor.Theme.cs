@@ -1,4 +1,4 @@
-// 主题：整套配色。默认「来生」（红黑 + 荧光蓝），另有「摩羯」（黑紫 + 霓虹粉 + 荧光绿）
+// 主题：整套配色。默认「来生」（红黑 + 荧光蓝），另有「摩羯」（暗红 + 绯红，荧光绿点缀）、「旧梦」（黑紫 + 霓虹粉 + 荧光绿）
 // 选择存在 data\settings.json 的 "theme"；在设置里切换，立即生效（重建画刷、给已经打开的窗口换色），不用重启
 using System;
 using System.Collections.Generic;
@@ -38,7 +38,19 @@ namespace WatchDog
             },
             new Palette
             {
-                Id = "capricorn", Name = "摩羯", Desc = "黑紫底 · 霓虹粉边框 · 荧光绿", OkName = "绿",
+                Id = "capricorn", Name = "摩羯", Desc = "暗红底 · 绯红边框 · 荧光绿点缀", OkName = "绿",
+                Bg = Color.FromArgb(15, 6, 8), Panel = Color.FromArgb(40, 10, 14), RowA = Color.FromArgb(21, 7, 9), RowB = Color.FromArgb(30, 9, 12), Deep = Color.FromArgb(9, 4, 5),
+                Ok = Color.FromArgb(72, 255, 134), Warn = Color.FromArgb(245, 217, 10), Bad = Color.FromArgb(255, 40, 60),
+                Accent = Color.FromArgb(255, 38, 58), AccentDim = Color.FromArgb(112, 20, 28), Text = Color.FromArgb(242, 222, 222), Gray = Color.FromArgb(176, 112, 112),
+                Dim = Color.FromArgb(68, 18, 22), Haz = Color.FromArgb(255, 38, 58),
+                Sel = Color.FromArgb(14, 58, 32), SelDown = Color.FromArgb(20, 86, 48), Row1 = Color.FromArgb(48, 40, 8), Row2 = Color.FromArgb(84, 12, 20),
+                Primary = Color.FromArgb(96, 14, 22), PrimaryHot = Color.FromArgb(132, 20, 30), Tile = Color.FromArgb(27, 8, 11), Feat = Color.FromArgb(12, 40, 24), FeatHot = Color.FromArgb(16, 64, 38),
+                Input = Color.FromArgb(25, 8, 11), Off = Color.FromArgb(62, 18, 22), Disabled = Color.FromArgb(112, 70, 72), Cause = Color.FromArgb(208, 180, 178),
+                MenuBg = Color.FromArgb(27, 8, 11), MenuSel = Color.FromArgb(88, 14, 22),
+            },
+            new Palette
+            {
+                Id = "olddream", Name = "旧梦", Desc = "黑紫底 · 霓虹粉边框 · 荧光绿", OkName = "绿",
                 Bg = Color.FromArgb(13, 8, 16), Panel = Color.FromArgb(30, 12, 33), RowA = Color.FromArgb(18, 9, 22), RowB = Color.FromArgb(25, 11, 30), Deep = Color.FromArgb(8, 5, 11),
                 Ok = Color.FromArgb(96, 255, 166), Warn = Color.FromArgb(245, 217, 10), Bad = Color.FromArgb(255, 48, 64),
                 Accent = Color.FromArgb(255, 84, 196), AccentDim = Color.FromArgb(86, 26, 74), Text = Color.FromArgb(242, 226, 240), Gray = Color.FromArgb(168, 124, 162),

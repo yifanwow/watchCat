@@ -86,7 +86,7 @@ namespace WatchDog
                         g.FillRectangle(st >= 1 ? bLv[0] : bDim, rx, y + 4, 3, rowH - 10);
                         Txt(g, titles[i], fCNbig, cText, rx + 18, y + 12, rw - 140, 24);
                         Txt(g, i == 3 ? "每天从 GitHub 取一次最新规则，只下载不上传 · " + RulesUpdateText() : i == 4 ? "现在：" + Theme.Name + "（" + Theme.Desc + "）· 切换后立即生效" : subs[i],
-                            fCN, cGray, rx + 18, y + 38, i == 4 ? rw - 210 : rw - 130, 20, tfL | TextFormatFlags.EndEllipsis);
+                            fCN, cGray, rx + 18, y + 38, i == 4 ? rw - 18 - Themes.Length * 84 - 24 : rw - 130, 20, tfL | TextFormatFlags.EndEllipsis);
                         if (i == 4)
                         {
                             for (int k = 0; k < Themes.Length; k++)
