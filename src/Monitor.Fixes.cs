@@ -209,7 +209,7 @@ namespace WatchDog
             Txt(g, limit > 0 ? "上限 " + FmtMB(limit) : "没有上限", fCN, cGray, b.Right - 18 - 116, b.Y + 66, 116, 20, tfR);
 
             // 为什么会涨（两行）
-            Txt(g, FitLines(g, r.Cause, fCN, wIn, 2), fCN, Color.FromArgb(200, 180, 172), x, b.Y + 96, wIn, 40, tfW);
+            Txt(g, FitLines(g, r.Cause, fCN, wIn, 2), fCN, cCause, x, b.Y + 96, wIn, 40, tfW);
 
             // 最近一次
             string last = LastActionOf(r.Id, log);

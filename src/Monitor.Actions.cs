@@ -21,6 +21,7 @@ namespace WatchDog
             this.selfTest = selfTest;
             selected = string.IsNullOrEmpty(select) ? null : select;
             chartMode = startChart; chartRange = startRange;
+            LoadTheme();
             CreateTheme();
             LoadNotes();
             LoadProfile();

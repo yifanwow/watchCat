@@ -404,7 +404,7 @@ namespace WatchDog
 
     class CyberColors : ProfessionalColorTable
     {
-        static Color bg = Color.FromArgb(24, 11, 14), sel = Color.FromArgb(70, 20, 26), acc = Color.FromArgb(255, 95, 87);
+        static Color bg { get { return Monitor.Theme.MenuBg; } } static Color sel { get { return Monitor.Theme.MenuSel; } } static Color acc { get { return Monitor.Theme.Accent; } }   // 跟着主题
         public override Color ToolStripDropDownBackground { get { return bg; } }
         public override Color ImageMarginGradientBegin { get { return bg; } }
         public override Color ImageMarginGradientMiddle { get { return bg; } }
@@ -414,7 +414,7 @@ namespace WatchDog
         public override Color MenuItemSelectedGradientEnd { get { return sel; } }
         public override Color MenuItemBorder { get { return acc; } }
         public override Color MenuBorder { get { return acc; } }
-        public override Color SeparatorDark { get { return Color.FromArgb(92, 30, 33); } }
+        public override Color SeparatorDark { get { return Monitor.Theme.AccentDim; } }
         public override Color SeparatorLight { get { return bg; } }
     }
 }

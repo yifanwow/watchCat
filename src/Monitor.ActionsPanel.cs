@@ -45,13 +45,17 @@ namespace WatchDog
             actTiles.Add(t); return t;
         }
 
+        void CreateActionBrushes()
+        {
+            bPrimary = Keep(new SolidBrush(cPrimary)); bPrimaryHot = Keep(new SolidBrush(cPrimaryHot));
+            bTile = Keep(new SolidBrush(cTile)); bTileHot = Keep(new SolidBrush(cSel));
+            bFeat = Keep(new SolidBrush(cFeat)); bFeatHot = Keep(new SolidBrush(cFeatHot));
+            pTile = Keep(new Pen(cRedDim, 1)); pFeat = Keep(new Pen(Color.FromArgb(150, cCyan), 1));
+        }
         void BuildActions()
         {
             fIcon = IconFont(12f); fIconBig = IconFont(17f);
-            bPrimary = Keep(new SolidBrush(Color.FromArgb(70, 18, 24))); bPrimaryHot = Keep(new SolidBrush(Color.FromArgb(104, 26, 34)));
-            bTile = Keep(new SolidBrush(Color.FromArgb(22, 10, 13))); bTileHot = Keep(new SolidBrush(Color.FromArgb(12, 46, 54)));
-            bFeat = Keep(new SolidBrush(Color.FromArgb(14, 34, 40))); bFeatHot = Keep(new SolidBrush(Color.FromArgb(18, 58, 68)));
-            pTile = Keep(new Pen(cRedDim, 1)); pFeat = Keep(new Pen(Color.FromArgb(150, 94, 246, 255), 1));
+            CreateActionBrushes();
 
             tFixAll = Tile(1, "", "一键修复全部问题", FixAll);
             tCheck = Tile(2, "", "立即检查", RunCheckNow);

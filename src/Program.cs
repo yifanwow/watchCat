@@ -176,6 +176,7 @@ namespace WatchDog
                 // 在屏幕外真实显示窗口，让所有控件都按正常流程创建和绘制
                 form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-5000, -5000); form.ShowInTaskbar = false;
                 form.Show(); Application.DoEvents();
+                if (a.ContainsKey("theme")) { form.PreviewTheme(Get(a, "theme", "")); Application.DoEvents(); }   // --theme capricorn：看另一个主题
                 if (a.ContainsKey("height")) { form.Height = int.Parse(Get(a, "height", "0")); Application.DoEvents(); }   // --height N：看不同窗口高度下的排版
                 if (sim > 0) form.Simulate(sim, Get(a, "rising", ""), a.ContainsKey("kleak"));
                 using (Bitmap bmp = new Bitmap(form.Width, form.Height))

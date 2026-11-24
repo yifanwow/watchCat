@@ -418,7 +418,7 @@ namespace WatchDog
                 Func<int, bool> optOk = i => i == 0 ? svc == null : i == 1 ? svc != null : items.Count > 1;
 
                 TextBox limitBox = new TextBox();
-                limitBox.BorderStyle = BorderStyle.FixedSingle; limitBox.BackColor = Color.FromArgb(24, 12, 15); limitBox.ForeColor = cText; limitBox.Font = fCNbig;
+                limitBox.BorderStyle = BorderStyle.FixedSingle; limitBox.BackColor = cInput; limitBox.ForeColor = cText; limitBox.Font = fCNbig;
                 limitBox.Text = ((int)(Math.Ceiling(Math.Max(cur * 1.5, cur + 300) / 100) * 100)).ToString();
                 limitBox.SetBounds(x0 + 92, yLimit + 1, 90, 28);
                 body.Controls.Add(limitBox);
@@ -452,7 +452,7 @@ namespace WatchDog
                         int cy = r.Y + r.Height / 2;
                         g.DrawEllipse(ok ? pAcc : pAccDim, r.X + 4, cy - 7, 14, 14);
                         if (method == i) g.FillEllipse(bLv[0], r.X + 8, cy - 3, 6, 6);
-                        Txt(g, opts[i], fCN, !ok ? Color.FromArgb(100, 72, 72) : method == i ? cText : cGray, r.X + 26, r.Y, r.Width - 30, r.Height, tfL | TextFormatFlags.EndEllipsis);
+                        Txt(g, opts[i], fCN, !ok ? cDisabled : method == i ? cText : cGray, r.X + 26, r.Y, r.Width - 30, r.Height, tfL | TextFormatFlags.EndEllipsis);
                     }
                     Txt(g, method == 2 ? "// 一起重启的（从上到下的顺序）" : "// 同一个软件的服务 / 程序（选\"按顺序重启一组\"时可以勾选）", fSmall, cAccent, x0, yItems - 18, w, 16);
                     for (int i = 0; i < items.Count; i++)
@@ -474,7 +474,7 @@ namespace WatchDog
                     using (GraphicsPath p = new GraphicsPath())
                     {
                         int d = sw.Height; p.AddArc(sw.X, sw.Y, d, d, 90, 180); p.AddArc(sw.Right - d, sw.Y, d, d, 270, 180); p.CloseFigure();
-                        using (SolidBrush b = new SolidBrush(auto ? cCyan : Color.FromArgb(52, 24, 28))) g.FillPath(b, p);
+                        using (SolidBrush b = new SolidBrush(auto ? cCyan : cOff)) g.FillPath(b, p);
                         if (!auto) g.DrawPath(pAccDim, p);
                     }
                     using (SolidBrush kb = new SolidBrush(auto ? cBg : cGray)) g.FillEllipse(kb, auto ? sw.Right - sw.Height + 3 : sw.X + 3, sw.Y + 3, sw.Height - 6, sw.Height - 6);

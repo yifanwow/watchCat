@@ -20,11 +20,7 @@ namespace WatchDog
 
     partial class Monitor : Form
     {
-        // ---------- 主题 ----------
-        static readonly Color cBg = Color.FromArgb(14, 9, 12), cPanel = Color.FromArgb(32, 13, 17), cRowA = Color.FromArgb(19, 10, 13),
-            cRowB = Color.FromArgb(26, 12, 16), cCyan = Color.FromArgb(94, 246, 255), cYellow = Color.FromArgb(245, 217, 10),
-            cRed = Color.FromArgb(255, 40, 60), cAccent = Color.FromArgb(255, 95, 87), cRedDim = Color.FromArgb(92, 30, 33),
-            cText = Color.FromArgb(236, 220, 214), cGray = Color.FromArgb(160, 116, 112), cDim = Color.FromArgb(58, 24, 28);
+        // ---------- 主题（颜色在 Monitor.Theme.cs，变量名沿用"来生"主题时的叫法：cCyan = 正常色，cRedDim = 暗强调色）----------
         static Color LevelColor(int l) { return l == 0 ? cCyan : l == 1 ? cYellow : l == 2 ? cRed : cGray; }
         static int Lx(int l) { return l == -1 ? 3 : Math.Max(0, Math.Min(2, l)); }   // 等级 -> 数组下标
 
@@ -43,21 +39,25 @@ namespace WatchDog
 
         T Keep<T>(T o) where T : IDisposable { gdi.Add(o); return o; }
 
+        // 字体只建一次；画刷和画笔跟着主题，切换主题时重建
         void CreateTheme()
         {
-            fCN = Keep(new Font("Microsoft YaHei UI", 9)); fCNb = Keep(new Font("Microsoft YaHei UI", 9, FontStyle.Bold));
-            fCNbig = Keep(new Font("Microsoft YaHei UI", 12, FontStyle.Bold)); fTagB = Keep(new Font("Bahnschrift SemiBold SemiConden", 10));
-            fNum = Keep(new Font("Bahnschrift SemiBold", 20)); fNumBig = Keep(new Font("Bahnschrift SemiBold", 26)); fNumS = Keep(new Font("Bahnschrift SemiBold", 17));
-            fHead = Keep(new Font("Bahnschrift SemiBold", 18)); fSmall = Keep(new Font("Bahnschrift", 8.5f)); fMono = Keep(new Font("Consolas", 8.5f));
-            bDeep = Keep(new SolidBrush(Color.FromArgb(9, 6, 8))); bCyanDim = Keep(new SolidBrush(Color.FromArgb(38, 94, 246, 255))); bRed = Keep(new SolidBrush(cRed));
-            bHaz = Keep(new HatchBrush(HatchStyle.WideUpwardDiagonal, cYellow, cBg));   // 黄黑警示条
-            pCyanThin = Keep(new Pen(cCyan, 1)); pCyanDash = Keep(new Pen(Color.FromArgb(110, 94, 246, 255), 1)); pCyanDash.DashStyle = DashStyle.Dash;
-            pPulse = Keep(new Pen(cCyan, 1.5f)); pPulseGlow = Keep(new Pen(Color.FromArgb(60, 94, 246, 255), 5)); pPulseGlow.LineJoin = LineJoin.Round;
+            if (fCN == null)
+            {
+                fCN = Keep(new Font("Microsoft YaHei UI", 9)); fCNb = Keep(new Font("Microsoft YaHei UI", 9, FontStyle.Bold));
+                fCNbig = Keep(new Font("Microsoft YaHei UI", 12, FontStyle.Bold)); fTagB = Keep(new Font("Bahnschrift SemiBold SemiConden", 10));
+                fNum = Keep(new Font("Bahnschrift SemiBold", 20)); fNumBig = Keep(new Font("Bahnschrift SemiBold", 26)); fNumS = Keep(new Font("Bahnschrift SemiBold", 17));
+                fHead = Keep(new Font("Bahnschrift SemiBold", 18)); fSmall = Keep(new Font("Bahnschrift", 8.5f)); fMono = Keep(new Font("Consolas", 8.5f));
+            }
+            bDeep = Keep(new SolidBrush(cDeep)); bCyanDim = Keep(new SolidBrush(Color.FromArgb(38, cCyan))); bRed = Keep(new SolidBrush(cRed));
+            bHaz = Keep(new HatchBrush(HatchStyle.WideUpwardDiagonal, cHaz, cBg));   // 警示条
+            pCyanThin = Keep(new Pen(cCyan, 1)); pCyanDash = Keep(new Pen(Color.FromArgb(110, cCyan), 1)); pCyanDash.DashStyle = DashStyle.Dash;
+            pPulse = Keep(new Pen(cCyan, 1.5f)); pPulseGlow = Keep(new Pen(Color.FromArgb(60, cCyan), 5)); pPulseGlow.LineJoin = LineJoin.Round;
             bBg = Keep(new SolidBrush(cBg)); bPanel = Keep(new SolidBrush(cPanel)); bRowA = Keep(new SolidBrush(cRowA)); bRowB = Keep(new SolidBrush(cRowB));
-            bDim = Keep(new SolidBrush(cDim)); bSel = Keep(new SolidBrush(Color.FromArgb(12, 46, 54))); bRow2 = Keep(new SolidBrush(Color.FromArgb(78, 14, 22)));
-            bRow1 = Keep(new SolidBrush(Color.FromArgb(48, 40, 8))); bDimLine = Keep(new SolidBrush(cRedDim)); bAcc = Keep(new SolidBrush(cAccent));
+            bDim = Keep(new SolidBrush(cDim)); bSel = Keep(new SolidBrush(cSel)); bRow2 = Keep(new SolidBrush(cRow2));
+            bRow1 = Keep(new SolidBrush(cRow1)); bDimLine = Keep(new SolidBrush(cRedDim)); bAcc = Keep(new SolidBrush(cAccent));
             pAcc = Keep(new Pen(cAccent, 1)); pAccDim = Keep(new Pen(cRedDim, 1)); pCyan = Keep(new Pen(cCyan, 2));
-            pScan = Keep(new Pen(Color.FromArgb(12, 255, 90, 80), 1)); pGrid = Keep(new Pen(Color.FromArgb(150, 92, 30, 33), 1));
+            pScan = Keep(new Pen(Color.FromArgb(12, cAccent), 1)); pGrid = Keep(new Pen(Color.FromArgb(150, cRedDim), 1));
             int[] lv = { 0, 1, 2, -1 };
             foreach (int l in lv)
             {
@@ -247,10 +247,7 @@ namespace WatchDog
             // 深色标题栏（Windows 11）
             HandleCreated += delegate
             {
-                Native.Dwm(Handle, 20, 1);
-                Native.Dwm(Handle, 35, 0x000C090E);   // 标题栏底色：红黑
-                Native.Dwm(Handle, 36, 0x00575FFF);   // 标题文字：珊瑚红
-                Native.Dwm(Handle, 34, 0x00575FFF);   // 窗口边框：珊瑚红
+                ThemeTitleBar(Handle);   // 标题栏底色 = 主题底色，标题文字和窗口边框 = 强调色
             };
         }
 
@@ -724,7 +721,7 @@ namespace WatchDog
             Txt(g, "重点监控", fCNbig, cText, 30, 0, 100, h - 4);
             int x = 30 + TextRenderer.MeasureText("重点监控", fCNbig).Width + 4;
             Txt(g, "// WATCHLIST  看门狗专项修复盯着的程序，出问题会被处理", fCN, cGray, x, 2, w - x - 430, h - 4);
-            Txt(g, string.Format("{0} 个程序（{1} 个自动处理） · 蓝 正常 {2} · 黄 留意 {3} · 红 出问题 {4}", n, au, cnt[0], cnt[1], cnt[2]), fCN, cGray, w - 430, 2, 430, h - 4, tfR);
+            Txt(g, string.Format("{0} 个程序（{1} 个自动处理） · {5} 正常 {2} · 黄 留意 {3} · 红 出问题 {4}", n, au, cnt[0], cnt[1], cnt[2], Theme.OkName), fCN, cGray, w - 430, 2, 430, h - 4, tfR);
             g.FillRectangle(bDimLine, 0, h - 2, w, 1);
             g.FillRectangle(bLv[Lx(worst)], 0, h - 3, 118, 3);
         }
@@ -754,7 +751,7 @@ namespace WatchDog
                 p.AddBezier(mid, bot, mid - s * 0.16f, s * 0.86f, l, s * 0.74f, l, s * 0.5f);
                 p.CloseFigure();
                 Color edge = level >= 2 ? cRed : level == 1 ? cYellow : cCyan;
-                using (SolidBrush f = new SolidBrush(level >= 2 ? Color.FromArgb(96, 10, 18) : level == 1 ? Color.FromArgb(70, 54, 6) : Color.FromArgb(10, 52, 66))) g.FillPath(f, p);
+                using (SolidBrush f = new SolidBrush(Mix(cDeep, edge, 0.24))) g.FillPath(f, p);
                 using (Pen pe = new Pen(edge, Math.Max(1.3f, s / 13f))) g.DrawPath(pe, p);
                 Color bone = Color.FromArgb(244, 236, 218);
                 float bw = Math.Max(1.5f, s * 0.09f), kr = Math.Max(1.15f, s * 0.065f);
@@ -1159,8 +1156,8 @@ namespace WatchDog
             g.FillRectangle(bBg, 0, 0, w, h);
             g.DrawLine(pAccDim, 0, 0, w, 0);
             g.FillRectangle(bHaz, 12, 9, 22, 10);
-            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 骨头盾牌 = 重点监控（蓝 正常 / 黄 留意 / 红 出问题） · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
-                selfMB, selfCpu, selfGdi, series.Count);
+            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 骨头盾牌 = 重点监控（{4} 正常 / 黄 留意 / 红 出问题） · 点卡片 / 看门狗切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门狗监控它",
+                selfMB, selfCpu, selfGdi, series.Count, Theme.OkName);
             Txt(g, txt, fCN, cGray, 42, 0, w - 54, h);
         }
 
@@ -1170,11 +1167,11 @@ namespace WatchDog
             Button b = new Button();
             b.Text = text; b.SetBounds(x, y, w, 28);
             b.FlatStyle = FlatStyle.Flat; b.Font = fCNb; b.Cursor = Cursors.Hand;
-            b.BackColor = primary ? Color.FromArgb(70, 18, 24) : cPanel;
+            b.BackColor = primary ? cPrimary : cPanel;
             b.ForeColor = primary ? cText : cAccent;
             b.FlatAppearance.BorderColor = cAccent; b.FlatAppearance.BorderSize = 1;
-            b.FlatAppearance.MouseOverBackColor = Color.FromArgb(12, 46, 54);
-            b.FlatAppearance.MouseDownBackColor = Color.FromArgb(20, 70, 82);
+            b.FlatAppearance.MouseOverBackColor = cSel;
+            b.FlatAppearance.MouseDownBackColor = cSelDown;
             b.Click += onClick;
             parent.Controls.Add(b);
             return b;

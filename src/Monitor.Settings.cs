@@ -1,4 +1,4 @@
-// 设置窗口：开机自动启动、后台看门狗（计划任务）、被 Windows 关掉后自动重新打开、文件夹
+// 设置窗口：开机自动启动、后台看门狗（计划任务）、被 Windows 关掉后自动重新打开、自动更新规则、界面主题、文件夹
 // 开机自动启动写在 HKCU\...\Run（只影响当前用户，不需要管理员），启动参数 --tray：开机后直接缩在托盘里
 using System;
 using System.Collections.Generic;
@@ -54,24 +54,27 @@ namespace WatchDog
 
         void ShowSettingsWindow()
         {
-            const int w = 700, h = 446;
+            const int w = 700, h = 520;
             BufferedPanel body;
             using (Form f = NewWindow("SETTINGS", "设置", w, h, out body))
             {
                 // 每一行：标题、说明、右边的开关（或状态）
                 const int rowH = 74, top = 56, rx = 22, rw = w - 44;
-                string[] titles = { "开机自动启动", "后台看门狗", "被关掉后自动重新打开", "自动更新公共规则" };
+                string[] titles = { "开机自动启动", "后台看门狗", "被关掉后自动重新打开", "自动更新公共规则", "界面主题" };
                 string[] subs = {
                     "登录 Windows 后自动打开 WatchDog，直接缩在托盘里，在后台记录走势",
                     "每 10 分钟检查一次（计划任务），超过上限且你空闲时自动处理；窗口关掉也照常运行",
                     "程序更新、卡住被关掉、重启电脑恢复应用时，Windows 会把 WatchDog 重新打开（一直开着）",
-                    "每天从 GitHub 取一次最新的专项修复规则（只下载规则文件，不上传任何东西）" };
-                const int nRow = 4;
+                    "每天从 GitHub 取一次最新的专项修复规则（只下载规则文件，不上传任何东西）", "" };
+                const int nRow = 5;
                 Rectangle[] sw = new Rectangle[nRow];
                 for (int i = 0; i < nRow; i++) sw[i] = new Rectangle(w - rx - 18 - 52, top + i * rowH + 22, 52, 26);
-                int hover = -1;
+                // 主题：右边每个主题一个按钮，用那个主题自己的颜色画（选中 = 实心）
+                Rectangle[] themeBtn = new Rectangle[Themes.Length];
+                for (int k = 0; k < Themes.Length; k++) themeBtn[k] = new Rectangle(w - rx - 18 - (Themes.Length - k) * 84 + 6, top + 4 * rowH + 22, 78, 26);
+                int hover = -1;   // 0–3 开关，10 起 = 主题按钮
                 string msg = "";
-                Func<int, int> state = i => i == 0 ? (AutoStartOn() ? 1 : 0) : i == 1 ? (taskInstalled ? 1 : 0) : i == 3 ? (RulesUpdateOn() ? 1 : 0) : 2;   // 2 = 一直开着，不能关
+                Func<int, int> state = i => i == 0 ? (AutoStartOn() ? 1 : 0) : i == 1 ? (taskInstalled ? 1 : 0) : i == 3 ? (RulesUpdateOn() ? 1 : 0) : i == 4 ? 1 : 2;   // 2 = 一直开着，不能关
 
                 body.Paint += (s, e) =>
                 {
@@ -82,7 +85,21 @@ namespace WatchDog
                         g.FillRectangle(bDeep, rx, y + 4, rw, rowH - 10);
                         g.FillRectangle(st >= 1 ? bLv[0] : bDim, rx, y + 4, 3, rowH - 10);
                         Txt(g, titles[i], fCNbig, cText, rx + 18, y + 12, rw - 140, 24);
-                        Txt(g, i == 3 ? "每天从 GitHub 取一次最新规则，只下载不上传 · " + RulesUpdateText() : subs[i], fCN, cGray, rx + 18, y + 38, rw - 130, 20, tfL | TextFormatFlags.EndEllipsis);
+                        Txt(g, i == 3 ? "每天从 GitHub 取一次最新规则，只下载不上传 · " + RulesUpdateText() : i == 4 ? "现在：" + Theme.Name + "（" + Theme.Desc + "）· 切换后立即生效" : subs[i],
+                            fCN, cGray, rx + 18, y + 38, i == 4 ? rw - 210 : rw - 130, 20, tfL | TextFormatFlags.EndEllipsis);
+                        if (i == 4)
+                        {
+                            for (int k = 0; k < Themes.Length; k++)
+                            {
+                                Palette tp = Themes[k]; Rectangle r2 = themeBtn[k]; bool on = tp == Theme, hot = hover == 10 + k;
+                                PointF[] poly = CutPoly(r2.X, r2.Y, r2.Width, r2.Height, 8);
+                                using (SolidBrush b = new SolidBrush(on ? tp.Accent : hot ? tp.Panel : tp.Bg)) g.FillPolygon(b, poly);
+                                using (Pen pe = new Pen(tp.Accent, 1)) g.DrawPolygon(pe, poly);
+                                using (SolidBrush dot = new SolidBrush(tp.Ok)) g.FillRectangle(dot, r2.X + 8, r2.Y + 10, 6, 6);
+                                Txt(g, tp.Name, fCNb, on ? tp.Bg : tp.Accent, r2.X + 14, r2.Y, r2.Width - 16, r2.Height, tfC);
+                            }
+                            continue;
+                        }
                         Rectangle r = sw[i];
                         if (st == 2) { Txt(g, "已开启", fCNb, cCyan, r.X - 20, r.Y, r.Width + 20, r.Height, tfR); continue; }
                         // 开关：开 = 荧光蓝底、圆点在右；关 = 暗底、圆点在左
@@ -90,7 +107,7 @@ namespace WatchDog
                         {
                             int d = r.Height;
                             p.AddArc(r.X, r.Y, d, d, 90, 180); p.AddArc(r.Right - d, r.Y, d, d, 270, 180); p.CloseFigure();
-                            using (SolidBrush b = new SolidBrush(st == 1 ? Color.FromArgb(hover == i ? 255 : 220, cCyan) : (hover == i ? cRedDim : Color.FromArgb(52, 24, 28)))) g.FillPath(b, p);
+                            using (SolidBrush b = new SolidBrush(st == 1 ? Color.FromArgb(hover == i ? 255 : 220, cCyan) : (hover == i ? cRedDim : cOff))) g.FillPath(b, p);
                             if (st != 1) g.DrawPath(pAccDim, p);
                         }
                         int kx = st == 1 ? r.Right - r.Height + 3 : r.X + 3;
@@ -102,7 +119,8 @@ namespace WatchDog
                 body.MouseMove += (s, e) =>
                 {
                     int hv = -1;
-                    for (int i = 0; i < nRow; i++) if (i != 2 && Rectangle.Inflate(sw[i], 40, 8).Contains(e.Location)) hv = i;
+                    for (int i = 0; i < 4; i++) if (i != 2 && Rectangle.Inflate(sw[i], 40, 8).Contains(e.Location)) hv = i;
+                    for (int k = 0; k < Themes.Length; k++) if (themeBtn[k].Contains(e.Location) && Themes[k] != Theme) hv = 10 + k;
                     if (hv != hover) { hover = hv; body.Cursor = hv >= 0 ? Cursors.Hand : Cursors.Default; body.Invalidate(); }
                 };
                 body.MouseClick += (s, e) =>
@@ -117,6 +135,13 @@ namespace WatchDog
                     {
                         ToggleTask();
                         msg = "正在" + (taskInstalled ? "取消" : "安装") + "后台看门狗，可能会弹出管理员确认，十几秒后这里会更新";
+                        body.Invalidate();
+                    }
+                    else if (hover >= 10)
+                    {
+                        SwitchTheme(Themes[hover - 10].Id);
+                        msg = "已换成「" + Theme.Name + "」主题";
+                        hover = -1; body.Cursor = Cursors.Default;
                         body.Invalidate();
                     }
                     else if (hover == 3)

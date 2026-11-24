@@ -24,7 +24,7 @@ namespace WatchDog
             f.KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) f.Close(); };
             f.HandleCreated += delegate
             {
-                Native.Dwm(f.Handle, 20, 1); Native.Dwm(f.Handle, 35, 0x000C090E); Native.Dwm(f.Handle, 36, 0x00575FFF); Native.Dwm(f.Handle, 34, 0x00575FFF);
+                ThemeTitleBar(f.Handle);
                 if (capIconH != IntPtr.Zero) Native.SendMessage(f.Handle, 0x80, IntPtr.Zero, capIconH);   // 标题栏小图标和主窗口一样（字母 W）
             };
             if (snapFile != null)   // 自测：在屏幕外显示，截图后自动关掉
@@ -107,7 +107,7 @@ namespace WatchDog
         {
             TextBox t = new TextBox();
             t.SetBounds(x, y, w, 26); t.Text = text ?? "";
-            t.BackColor = Color.FromArgb(22, 10, 14); t.ForeColor = cCyan; t.BorderStyle = BorderStyle.FixedSingle; t.Font = fCNb;
+            t.BackColor = cInput; t.ForeColor = cCyan; t.BorderStyle = BorderStyle.FixedSingle; t.Font = fCNb;
             parent.Controls.Add(t);
             return t;
         }
