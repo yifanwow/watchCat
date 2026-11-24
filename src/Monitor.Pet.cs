@@ -20,12 +20,14 @@ using System.Windows.Forms;
 
 namespace WatchDog
 {
-    class PetPart { public string Id, File; public Rectangle R; public int Z; public PointF Pivot; public bool Visible; }
-    class PetLayer { public string Id; public Bitmap B; public Rectangle Dst; public PointF Pivot; public int Z; }
+    class PetPart { public string Id, File, Slot; public Rectangle R; public int Z; public PointF Pivot; public bool Visible; }
+    class PetLayer { public string Id, Slot; public bool Default; public Bitmap B; public Rectangle Dst; public PointF Pivot; public int Z; }
+    // 一帧的姿势：帽子 / 星星的角度、故障层错位，以及每个"组"显示哪一张（没写的组用默认那张）
     class PetPose
     {
-        public int Dy, GlitchDx; public float Hat, Star, Arm; public string Eyes = "eyes-open", Brows = "brows-normal", Mouth = "mouth-smile";
-        public string Key() { return Dy + "|" + GlitchDx + "|" + Math.Round(Hat * 4) + "|" + Math.Round(Star * 2) + "|" + Math.Round(Arm) + "|" + Eyes + Brows + Mouth; }
+        public int GlitchDx; public float Hat, Star;
+        public Dictionary<string, string> Frames = new Dictionary<string, string>();
+        public string Key() { return GlitchDx + "|" + Math.Round(Hat * 4) + "|" + Math.Round(Star * 2) + "|" + string.Join(",", Frames.OrderBy(f => f.Key).Select(f => f.Value)); }
     }
 
     // 分层窗口：没有边框、不进任务栏和 Alt+Tab、点它不会抢走焦点。画面画在一块固定的 DIB 上，每帧不再分配内存
@@ -116,7 +118,7 @@ namespace WatchDog
         bool petDown, petDragging; Point petDownScreen, petDownAt;
         ContextMenuStrip petMenu;
         string PetDir { get { return Path.Combine(ToolDir, "assets", "mascot"); } }
-        static readonly HashSet<string> PetHeadGroup = new HashSet<string> { "hair-back", "head", "eyes-open", "eyes-half", "eyes-closed", "brows-normal", "brows-worried", "mouth-smile", "mouth-open", "mouth-worried", "hair-front", "hat", "hat-star" };
+        int petRig;   // parts.json 的 version
 
         // 开关和拖动后的位置存在 data\settings.json；读一次缓存起来（主窗口拖动时会频繁用到，不每次读文件）
         bool petOn = true; Point petOfs;
@@ -147,10 +149,14 @@ namespace WatchDog
                         R = new Rectangle((int)Json.Num(p, "x"), (int)Json.Num(p, "y"), (int)Json.Num(p, "width"), (int)Json.Num(p, "height")),
                         Pivot = new PointF((float)Json.Num(p, "pivotX"), (float)Json.Num(p, "pivotY")),
                         Visible = !p.ContainsKey("visible") || Json.Bool(p, "visible"),
+                        Slot = Json.Str(p, "slot"),
                     };
+                    // 没写 slot 的：eyes-* / brows-* / mouth-* 各算一组
+                    if (pp.Slot == null && pp.Id != null) foreach (string g in new[] { "eyes", "brows", "mouth" }) if (pp.Id.StartsWith(g + "-")) pp.Slot = g;
                     if (pp.Id != null && pp.File != null && pp.R.Width > 0 && File.Exists(Path.Combine(PetDir, pp.File))) petParts.Add(pp);
                 }
                 petParts = petParts.OrderBy(x => x.Z).ToList();
+                petRig = (int)Json.Num(d, "version");   // 2 = 按新要求重做的素材（眼睛 / 嘴 / 挥手都是换帧）
                 List<PetPart> vis = petParts.Where(x => x.Visible).ToList();
                 if (vis.Count == 0) return false;
                 petBox = vis[0].R; foreach (PetPart x in vis) petBox = Rectangle.Union(petBox, x.R);
@@ -184,7 +190,7 @@ namespace WatchDog
                             // 部件在画布上的位置 → 小图里的位置（保留取整前的小数，部件之间对得齐）
                             g.DrawImage(src, new RectangleF(o.X - dst.X, o.Y - dst.Y, p.R.Width * k, p.R.Height * k), p.R, GraphicsUnit.Pixel);
                         }
-                        petLayers.Add(new PetLayer { Id = p.Id, B = b, Dst = dst, Pivot = PetPt(p.Pivot.X, p.Pivot.Y, k), Z = p.Z });
+                        petLayers.Add(new PetLayer { Id = p.Id, Slot = p.Slot, Default = p.Visible, B = b, Dst = dst, Pivot = PetPt(p.Pivot.X, p.Pivot.Y, k), Z = p.Z });
                     }
                 }
                 catch { }
@@ -199,37 +205,47 @@ namespace WatchDog
             PetLayer hat = petLayers.FirstOrDefault(l => l.Id == "hat");
             foreach (PetLayer l in petLayers)
             {
-                if (l.Id.StartsWith("eyes-") && l.Id != pose.Eyes) continue;
-                if (l.Id.StartsWith("brows-") && l.Id != pose.Brows) continue;
-                if (l.Id.StartsWith("mouth-") && l.Id != pose.Mouth) continue;
+                if (l.Slot != null)
+                {
+                    string f; bool pick = pose.Frames.TryGetValue(l.Slot, out f) && HasLayer(f);
+                    if (pick ? f != l.Id : !l.Default) continue;
+                }
+                else if (!l.Default) continue;
                 GraphicsState st = g.Save();
-                if (PetHeadGroup.Contains(l.Id) && pose.Dy != 0) g.TranslateTransform(0, pose.Dy);
                 if ((l.Id == "hat" || l.Id == "hat-star") && hat != null && pose.Hat != 0) Rotate(g, hat.Pivot, pose.Hat);   // 星星先跟着帽子转
                 if (l.Id == "hat-star" && pose.Star != 0) Rotate(g, l.Pivot, pose.Star);                                       // 再绕自己的挂点摆
-                if (l.Id == "arm-right" && pose.Arm != 0) Rotate(g, l.Pivot, pose.Arm);
                 if (l.Id == "glitch" && pose.GlitchDx != 0) g.TranslateTransform(pose.GlitchDx, 0);
                 g.DrawImage(l.B, l.Dst);
                 g.Restore(st);
             }
         }
+        bool HasLayer(string id) { foreach (PetLayer l in petLayers) if (l.Id == id) return true; return false; }
         static void Rotate(Graphics g, PointF c, float deg) { g.TranslateTransform(c.X, c.Y); g.RotateTransform(deg); g.TranslateTransform(-c.X, -c.Y); }
 
         // 现在应该是什么姿势（t = 秒）
+        // 旧素材（version 1）：只有帽子晃、星星摆、故障闪，说到问题时皱眉；眨眼、说话、挥手的帧画得不对，先不用
+        // 新素材（version 2）：再加眨眼（eyes-half → eyes-closed → eyes-half）、说话换嘴型、挥手换手臂帧
         PetPose PoseAt(double t)
         {
             PetPose p = new PetPose();
-            p.Dy = (int)Math.Round(Math.Sin(t * 2 * Math.PI / 3.6) * 1.2);                 // 呼吸：3.6 秒一次，上下 1 像素
             p.Hat = (float)(Math.Sin(t * 2 * Math.PI / 5.3) * 1.2);                         // 帽子轻轻晃
             p.Star = (float)(Math.Sin(t * 2 * Math.PI / 2.7) * 7);                          // 帽尖星星摆
-            double w = t - waveFrom;
-            if (w >= 0 && w < 1.6) p.Arm = (float)(Math.Sin(w * 2 * Math.PI * 1.6) * 14 * (1 - w / 1.6 * 0.5));   // 挥手：摆几下慢慢停
             if (t >= glitchAt && t < glitchAt + 0.14) p.GlitchDx = (t - glitchAt < 0.07 ? 1 : -1) * Math.Max(2, petH / 90);   // 故障层错位闪一下
-            int mood = t < bubbleUntil ? sayMood : petMood;
-            if (mood >= 2) { p.Brows = "brows-worried"; p.Mouth = "mouth-worried"; }
-            double b = t - blinkAt;                                                         // 眨眼：半闭 → 闭 → 半闭
-            if (b >= 0 && b < 0.2) p.Eyes = b < 0.06 || b >= 0.14 ? "eyes-half" : "eyes-closed";
-            else if (mood >= 2) p.Eyes = "eyes-half";
-            if (t < talkUntil && ((int)(t / 0.16)) % 2 == 0) p.Mouth = "mouth-open";          // 说话：嘴一张一合
+            bool worried = t < bubbleUntil && sayMood >= 2;                                 // 只在说到问题时皱眉，平时不苦着脸
+            if (worried) { p.Frames["brows"] = "brows-worried"; p.Frames["mouth"] = "mouth-worried"; }
+            if (petRig < 2) return p;
+            double b = t - blinkAt;
+            if (b >= 0 && b < 0.18) p.Frames["eyes"] = b < 0.05 || b >= 0.13 ? "eyes-half" : "eyes-closed";
+            if (t < talkUntil)
+            {
+                // 说话：张嘴 / 小圆嘴 / 合上，节奏不完全规律，看起来像在念字
+                int k = (int)(t / 0.13);
+                string[] cyc = { "mouth-talk-a", "mouth-talk-o", null, "mouth-talk-a", null, null, "mouth-talk-o", null };
+                string m = cyc[k % cyc.Length];
+                if (m != null) p.Frames["mouth"] = m;
+            }
+            double w = t - waveFrom;
+            if (w >= 0 && w < 1.5) p.Frames["arm-right"] = ((int)(w / 0.22)) % 2 == 0 ? "arm-right-wave-a" : "arm-right-wave-b";
             return p;
         }
 
@@ -406,7 +422,7 @@ namespace WatchDog
             if (pet == null || !pet.Visible) return;
             double t = petClock.Elapsed.TotalSeconds;
             bubbleText = text; bubbleTarget = target; bubbleLevel = Math.Max(0, level); sayMood = mood;
-            talkUntil = t + Math.Min(3.0, 0.6 + text.Length * 0.05);
+            talkUntil = t + Math.Min(2.6, 0.5 + text.Length * 0.04);
             bubbleUntil = t + (level >= 1 ? 14 : 8) + text.Length * 0.05;
             RenderBubble();
             PlaceBubble();
@@ -491,12 +507,10 @@ namespace WatchDog
             if (!LoadPetParts()) return;
             BuildPetLayers(h);
             Size sz = PetSize(h);
-            PetPose[] poses = {
-                new PetPose(),
-                new PetPose { Eyes = "eyes-closed", Dy = -1, Star = 7 },
-                new PetPose { Brows = "brows-worried", Mouth = "mouth-worried", Eyes = "eyes-half", Hat = 1.2f },
-                new PetPose { Mouth = "mouth-open", Arm = 14, Star = -7, GlitchDx = 4 },
-            };
+            PetPose[] poses = { new PetPose(), new PetPose(), new PetPose(), new PetPose() };
+            poses[1].Frames["eyes"] = "eyes-closed"; poses[1].Star = 7;
+            poses[2].Frames["brows"] = "brows-worried"; poses[2].Frames["mouth"] = "mouth-worried"; poses[2].Hat = 1.2f;
+            poses[3].Frames["mouth"] = "mouth-talk-a"; poses[3].Frames["arm-right"] = "arm-right-wave-a"; poses[3].Star = -7; poses[3].GlitchDx = 4;
             using (Bitmap sheet = new Bitmap(sz.Width * poses.Length, sz.Height, PixelFormat.Format32bppPArgb))
             using (Graphics g = Graphics.FromImage(sheet))
             {
