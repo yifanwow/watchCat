@@ -433,6 +433,7 @@ namespace WatchDog
                 petDown = false;
                 if (petDragging)
                 {
+                    petDragging = false;   // 拖完了：不清掉的话，改大小时会以为还在拖，一直不生效
                     Point a = PetAnchor(PetSize(petH));
                     SetPetOffset(new Point(petAt.X - a.X, petAt.Y - a.Y));
                     PlacePet();
@@ -521,7 +522,7 @@ namespace WatchDog
             double t = petClock.Elapsed.TotalSeconds;
             // 主窗口改大小停下 0.3 秒后，再按新高度重新缩部件（拖动边框时不会一直重建）
             int want = PetWantH();
-            if (want != petH && t - sizeChangedAt > 0.3 && !petDragging)
+            if (want != petH && t - sizeChangedAt > 0.3 && !(petDown && petDragging))
             {
                 BuildPetLayers(want);
                 Size sz = PetSize(petH);
