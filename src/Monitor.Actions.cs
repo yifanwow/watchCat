@@ -195,6 +195,7 @@ namespace WatchDog
         // 原地更新列表（不清空重建）：只改变了的格子，滚动位置和选中都保留，不闪
         void FillList(ListView l, List<ProcRow> list)
         {
+            if (list.Count > 0) listMaxMB = Math.Max(1, Math.Max(listMaxMB * 0.98, list.Max(x => x.PrivMB)));   // 内存小横条的满格（慢慢回落，不会每次都跳）
             while (l.Items.Count > list.Count) l.Items.RemoveAt(l.Items.Count - 1);
             for (int i = 0; i < list.Count; i++)
             {
@@ -207,9 +208,13 @@ namespace WatchDog
                 // 稳定性看内存；句柄 / 图形资源有问题时，"判断"一栏显示那个问题
                 int lvRow = Math.Max(rt.Level, ri != null ? ri.Level : -1);
                 string judge = ri != null && ri.Level >= rt.Level ? ShortTitle(ri, r.Name) : rt.Forecast.Length > 0 ? rt.Forecast : rt.Note;
-                string[] vals = { r.Name, desc ?? "", string.Format("{0:N0}", r.PrivMB), string.Format("{0:N1}", r.CpuPct), string.Format("{0:N1}", r.IoMBs),
-                    string.Format("{0:N0}", r.Handles), r.Gdi + r.User > 0 ? r.Gdi + "/" + r.User : "-", rt.Text, rt.Trend, judge };
-                for (int k = 0; k < ColCount; k++) if (it.SubItems[k].Text != vals[k]) it.SubItems[k].Text = vals[k];
+                // 每一格的文字只用来判断"变没变"（变了才重画）；真正怎么画见 DrawSubItem
+                List<HistPt> hp; string spark = hist.TryGetValue(r.Name, out hp) && hp.Count > 0 ? hp.Count + "@" + hp[hp.Count - 1].T.Ticks : "";
+                string[] vals = { r.Name, string.Format("{0:N0}", r.PrivMB) + (desc ?? "") + r.Count + ecoNames.Contains(r.Name) + ResLevel(r.Name),
+                    string.Format("{0:N1}", r.CpuPct), string.Format("{0:N1}", r.IoMBs), spark, rt.Text + rt.Level, judge + "\n" + rt.Trend };
+                bool changed = false;
+                for (int k = 0; k < ColCount; k++) if (it.SubItems[k].Text != vals[k]) { it.SubItems[k].Text = vals[k]; changed = true; }
+                if (changed) l.Invalidate(it.Bounds);   // 第一格的第二行（说明、进程数、节能）跟着别的格子变，整行重画
                 if (!(it.Tag is int) || (int)it.Tag != lvRow) { it.Tag = lvRow; l.Invalidate(it.Bounds); }
                 bool sel = r.Name == selected;
                 if (it.Selected != sel) it.Selected = sel;

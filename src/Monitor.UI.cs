@@ -149,9 +149,9 @@ namespace WatchDog
         static readonly string[] RangeKeys = { "30m", "1h", "3h", "12h", "24h", "7d" };
         static readonly Dictionary<string, double> RangeHours = new Dictionary<string, double> { { "30m", 0.5 }, { "1h", 1 }, { "3h", 3 }, { "12h", 12 }, { "24h", 24 }, { "7d", 168 } };
         static readonly Dictionary<string, string> RangeLabel = new Dictionary<string, string> { { "30m", "30 分钟" }, { "1h", "1 小时" }, { "3h", "3 小时" }, { "12h", "12 小时" }, { "24h", "24 小时" }, { "7d", "7 天" } };
-        const int ColCount = 10;
-        static readonly int[] RightCols = { 2, 3, 4, 5, 6 };
-        static readonly Dictionary<string, int> SortCol = new Dictionary<string, int> { { "mem", 2 }, { "cpu", 3 }, { "io", 4 }, { "hnd", 5 }, { "gui", 6 }, { "issue", 7 } };
+        const int ColCount = 7;   // 程序（两行：名字 + 说明）、内存（数字 + 小横条）、CPU、读写、24 小时走势、稳定性、判断（两行）
+        static readonly int[] RightCols = { 1, 2, 3 };
+        static readonly Dictionary<string, int> SortCol = new Dictionary<string, int> { { "mem", 1 }, { "cpu", 2 }, { "io", 3 }, { "hnd", -1 }, { "gui", -1 }, { "issue", 5 } };
 
         void BuildUI()
         {
@@ -692,7 +692,10 @@ namespace WatchDog
             }
             catch { }
             bool vis = n > 0;
-            int want = vis ? watchHead.Height + watchHdrH + Math.Min(n, 8) * watchRowH + 2 + watchBox.Padding.Bottom : 0;
+            // 最多占列表区域的四成左右（行变高了，8 行会把下面的主列表挤得只剩几行），放不下的可以在小列表里滚动
+            int room = (watchBox.Visible ? watchBox.Height : 0) + lv.Height;
+            int maxRows = room > 200 ? Math.Max(3, Math.Min(8, (int)(room * 0.42 - watchHead.Height - watchHdrH) / Math.Max(1, watchRowH))) : 4;
+            int want = vis ? watchHead.Height + watchHdrH + Math.Min(n, maxRows) * watchRowH + 2 + watchBox.Padding.Bottom : 0;
             if (watchBox.Visible != vis) watchBox.Visible = vis;
             if (watchBox.Height != want) watchBox.Height = want;
             watchHead.Invalidate();
@@ -756,8 +759,8 @@ namespace WatchDog
             BufferedListView lv = new BufferedListView();
             lv.Dock = DockStyle.Fill; lv.View = View.Details; lv.FullRowSelect = true; lv.HideSelection = false; lv.MultiSelect = false;
             lv.OwnerDraw = true; lv.BackColor = cRowA; lv.ForeColor = cText; lv.BorderStyle = BorderStyle.None;
-            rowH = new ImageList(); rowH.ImageSize = new Size(1, 28); lv.SmallImageList = rowH;
-            object[,] cols = { { "程序", 160 }, { "说明", 112 }, { "内存 MB", 76 }, { "CPU %", 56 }, { "读写 MB/s", 74 }, { "句柄", 62 }, { "GDI/USER", 82 }, { "稳定性", 74 }, { "变化", 112 }, { "判断 / 预测", 170 } };
+            rowH = new ImageList(); rowH.ImageSize = new Size(1, RowH); lv.SmallImageList = rowH;
+            object[,] cols = { { "程序", 250 }, { "内存", 118 }, { "CPU %", 62 }, { "读写 MB/s", 82 }, { "24 小时", 128 }, { "稳定性", 96 }, { "判断", 200 } };
             for (int i = 0; i < cols.GetLength(0); i++) lv.Columns.Add((string)cols[i, 0], (int)cols[i, 1]);
             lv.DrawColumnHeader += delegate(object s, DrawListViewColumnHeaderEventArgs e)
             {
@@ -776,7 +779,7 @@ namespace WatchDog
             };
             lv.ColumnClick += delegate(object s, ColumnClickEventArgs e)
             {
-                sortMode = e.Column == 2 ? "mem" : e.Column == 3 ? "cpu" : e.Column == 4 ? "io" : e.Column == 5 ? "hnd" : e.Column == 6 ? "gui" : "issue";
+                sortMode = e.Column == 1 ? "mem" : e.Column == 2 ? "cpu" : e.Column == 3 ? "io" : "issue";
                 RefreshAll();
                 // 列标题是单独的子窗口，Invalidate() 不会重画它，旧的排序标记会留着：两个列表的标题都手动整个重画
                 foreach (BufferedListView l in new[] { this.lv, lvG })
@@ -813,38 +816,117 @@ namespace WatchDog
             };
             return lv;
         }
+        // ---------- 程序列表的每一格（两行卡片式）----------
+        const int RowH = 44;
+        double listMaxMB = 1;   // 列表里最大的内存，内存小横条按它算比例
         void DrawSubItem(object s, DrawListViewSubItemEventArgs e)
         {
             Graphics g = e.Graphics; Rectangle r = e.Bounds; ListViewItem it = e.Item;
             int lvl = it.Tag is int ? (int)it.Tag : -1;
             Brush bg = it.Selected ? bSel : lvl == 2 ? bRow2 : lvl == 1 ? bRow1 : it.Index % 2 == 1 ? bRowB : bRowA;
             g.FillRectangle(bg, r);
-            int col = e.ColumnIndex;
-            if (col == 0)
+            if (it.Index > 0) g.FillRectangle(bDimLine, r.X, r.Y, r.Width, 1);   // 行与行之间一条细线
+            string name = it.Text; ProcRow pr; rows.TryGetValue(name, out pr);
+            Rating rt; if (!ratings.TryGetValue(name, out rt)) rt = null;
+            int y1 = r.Y + 4, y2 = r.Y + 23, lh = 18;   // 第一行 / 第二行
+            switch (e.ColumnIndex)
             {
-                Bitmap icon = GetIcon(it.Text);
-                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                if (icon != null) g.DrawImage(icon, r.X + 8, r.Y + 5, 18, 18); else g.FillRectangle(bDim, r.X + 11, r.Y + 8, 12, 12);
-                if (it.Selected) g.FillRectangle(bLv[0], r.X, r.Y + 3, 3, r.Height - 6);
-                int tw = r.Width - 40;
-                Rule gr;
-                if (guarded.TryGetValue(it.Text, out gr))
+                case 0:
                 {
-                    // 重点监控（看门猫专项修复在管）：名字右边一个交叉骨头的盾牌，左边一道细线。蓝 = 正常，黄 = 需要留意，红 = 出问题
-                    int gl = GuardLevel(it.Text, gr);
-                    if (!it.Selected) g.FillRectangle(bLv[Lx(gl)], r.X, r.Y + 6, 2, r.Height - 12);
-                    g.DrawImage(Shield(gl, 18), r.Right - 22, r.Y + (r.Height - 18) / 2);
-                    tw -= 22;
+                    Bitmap icon = GetIcon(name);
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    if (icon != null) g.DrawImage(icon, r.X + 10, r.Y + (r.Height - 24) / 2, 24, 24); else g.FillRectangle(bDim, r.X + 13, r.Y + 13, 18, 18);
+                    if (it.Selected) g.FillRectangle(bLv[0], r.X, r.Y + 4, 3, r.Height - 8);
+                    int tw = r.Width - 52;
+                    Rule gr;
+                    if (guarded.TryGetValue(name, out gr))
+                    {
+                        // 重点监控：名字右边一个像素十字，左边一道细线（颜色 = 状态）
+                        int gl = GuardLevel(name, gr);
+                        if (!it.Selected) g.FillRectangle(bLv[Lx(gl)], r.X, r.Y + 6, 2, r.Height - 12);
+                        g.DrawImage(Shield(gl, 18), r.Right - 24, y1 + 1);
+                        tw -= 24;
+                    }
+                    else if (watched.ContainsKey(name)) { Txt(g, "◉", fCN, cCyan, r.Right - 22, y1, 16, lh); tw -= 20; }
+                    Txt(g, name, fCNb, cText, r.X + 44, y1, tw, lh);
+                    // 第二行：说明 · 进程数 · 节能 · 句柄 / 图形资源问题
+                    string sub = DescOf(name) ?? "";
+                    if (pr != null && pr.Count > 1) sub += (sub.Length > 0 ? " · " : "") + pr.Count + " 个进程";
+                    if (ecoNames.Contains(name)) sub += " · 节能中";
+                    int rl = ResLevel(name);
+                    Txt(g, sub, fCN, HasNote(name) ? cText : cGray, r.X + 44, y2, r.Width - 52 - (rl >= 1 ? 90 : 0), lh);
+                    if (rl >= 1 && pr != null) Txt(g, pr.Gdi + pr.User > 800 && pr.Handles < 20000 ? "GDI " + (pr.Gdi + pr.User) : "句柄 " + pr.Handles.ToString("N0"), fCN, LevelColor(rl), r.Right - 92, y2, 86, lh, tfR);
+                    return;
                 }
-                else if (watched.ContainsKey(it.Text)) { Txt(g, "◉", fCN, cCyan, r.Right - 20, r.Y, 16, r.Height); tw -= 18; }
-                Txt(g, it.Text, fCNb, cText, r.X + 34, r.Y, tw, r.Height);
-                return;
+                case 1:
+                {
+                    // 内存：数字 + 下面一条按比例的小横条
+                    double mb = pr != null ? pr.PrivMB : 0;
+                    Txt(g, string.Format("{0:N0} MB", mb), fCN, cText, r.X + 6, y1, r.Width - 14, lh, tfR);
+                    int bw = r.Width - 22, bx = r.X + 14, by = y2 + 7;
+                    g.FillRectangle(bDim, bx, by, bw, 4);
+                    int fw = (int)Math.Round(bw * Math.Min(1, mb / listMaxMB));
+                    if (fw > 0) g.FillRectangle(rt != null && rt.Level >= 1 ? bLv[Lx(rt.Level)] : bAcc, bx + bw - fw, by, fw, 4);   // 从右往左长，和数字对齐
+                    return;
+                }
+                case 2:
+                case 3:
+                {
+                    double v = pr == null ? 0 : e.ColumnIndex == 2 ? pr.CpuPct : pr.IoMBs;
+                    Color c = e.ColumnIndex == 3 && v >= HeavyIoMBs ? cYellow : v < 0.05 ? cGray : cText;
+                    Txt(g, v.ToString("N1"), fCN, c, r.X + 6, r.Y, r.Width - 14, r.Height, tfR);
+                    return;
+                }
+                case 4:
+                    DrawSpark(g, name, rt, new Rectangle(r.X + 12, r.Y + 9, r.Width - 24, r.Height - 18));
+                    return;
+                case 5:
+                {
+                    // 稳定性：彩色小标签（正常的用灰色描边，不抢眼）
+                    if (rt == null) return;
+                    int ml = rt.Level;
+                    Size ts = TextRenderer.MeasureText(g, rt.Text, fCNb, new Size(200, 30), tfL);
+                    Rectangle pill = new Rectangle(r.X + 8, r.Y + (r.Height - 22) / 2, Math.Min(r.Width - 16, ts.Width + 16), 22);
+                    PointF[] poly = CutPoly(pill.X, pill.Y, pill.Width, pill.Height, 6);
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    if (ml >= 1) { using (SolidBrush b = new SolidBrush(Color.FromArgb(46, LevelColor(ml)))) g.FillPolygon(b, poly); using (Pen pe = new Pen(LevelColor(ml))) g.DrawPolygon(pe, poly); }
+                    else g.DrawPolygon(pAccDim, poly);
+                    g.SmoothingMode = SmoothingMode.None;
+                    Txt(g, rt.Text, fCNb, ml >= 1 ? LevelColor(ml) : ml == 0 ? cCyan : cGray, pill.X, pill.Y, pill.Width, pill.Height, tfC);
+                    return;
+                }
+                case 6:
+                {
+                    // 判断：第一行结论 / 预测，第二行变化
+                    string[] parts = (e.SubItem.Text ?? "").Split('\n');
+                    Txt(g, parts[0], lvl >= 1 ? fCNb : fCN, lvl >= 1 ? LevelColor(lvl) : cText, r.X + 8, y1, r.Width - 16, lh);
+                    if (parts.Length > 1) Txt(g, parts[1], fCN, cGray, r.X + 8, y2, r.Width - 16, lh);
+                    return;
+                }
             }
-            double io; double.TryParse(it.SubItems[4].Text, out io);
-            int rl = ResLevel(it.Text); Rating mr; int ml = ratings.TryGetValue(it.Text, out mr) ? mr.Level : -1;   // 稳定性一栏只看内存
-            Color c = col == 1 ? (HasNote(it.Text) ? cText : cGray) : col == 8 ? cGray : col == 4 ? (io >= HeavyIoMBs ? cYellow : cText)
-                : col == 5 || col == 6 ? (rl >= 1 ? LevelColor(rl) : cGray) : col == 7 ? LevelColor(ml) : col == 9 ? (lvl >= 1 ? LevelColor(lvl) : cGray) : cText;
-            Txt(g, e.SubItem.Text, col == 7 ? fCNb : fCN, c, r.X + 8, r.Y, r.Width - 16, r.Height, RightCols.Contains(col) ? tfR : tfL);
+        }
+        // 24 小时走势小图：看门猫每 10 分钟记一个点；还没有长期记录的用窗口打开后的实时数据
+        void DrawSpark(Graphics g, string name, Rating rt, Rectangle box)
+        {
+            List<double> v = new List<double>();
+            List<HistPt> h;
+            if (hist.TryGetValue(name, out h) && h.Count >= 3) { DateTime from = DateTime.Now.AddHours(-24); foreach (HistPt p in h) if (p.T >= from) v.Add(p.MB); }
+            else { Ring ring; if (series.TryGetValue(name, out ring)) for (int i = 0; i < ring.Count; i++) v.Add(ring.ValueAt(i)); }
+            if (v.Count < 3) { Txt(g, "-", fCN, cGray, box.X, box.Y, box.Width, box.Height, tfC); return; }
+            // 点太多时按格子宽度抽样
+            int n = Math.Min(v.Count, Math.Max(8, box.Width / 2));
+            double lo = v.Min(), hi = v.Max(), span = Math.Max(hi - lo, Math.Max(hi * 0.05, 1));
+            PointF[] pts = new PointF[n];
+            for (int i = 0; i < n; i++)
+            {
+                double val = v[(int)((long)i * (v.Count - 1) / (n - 1))];
+                pts[i] = new PointF(box.X + box.Width * i / (float)(n - 1), box.Bottom - 1 - (float)((box.Height - 2) * (val - lo) / span));
+            }
+            int li = rt != null && rt.Level >= 1 ? Lx(rt.Level) : 3;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.DrawLines(li == 3 ? pAccDim : pCore[li], pts);
+            g.FillRectangle(li == 3 ? bAcc : bLv[li], pts[n - 1].X - 1.5f, pts[n - 1].Y - 1.5f, 3, 3);
+            g.SmoothingMode = SmoothingMode.None;
         }
         void FitColumns() { FitColumns(lv); if (lvG != null) FitColumns(lvG); }
         static void FitColumns(ListView lv)
