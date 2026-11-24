@@ -27,6 +27,7 @@ namespace WatchDog
             LoadProfile();
             BuildUI();
             if (!selfTest) BuildTray();
+            BuildPet();   // 看板娘（自测时不建）
         }
 
         // 窗口出现前：读回实时数据，取一次基准（CPU / 磁盘 / 读写速度要两次之间的差值）

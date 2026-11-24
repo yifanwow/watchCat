@@ -21,6 +21,11 @@ $files = 'WatchDog.exe', 'MemWatchdog.ps1', 'Install-Watchdog.ps1', 'Fix-NvTopps
 foreach ($f in $files) { Copy-Item (Join-Path $dir $f) $stage }
 New-Item -ItemType Directory -Path (Join-Path $stage 'extras') | Out-Null
 Copy-Item (Join-Path $dir 'extras\*') (Join-Path $stage 'extras')
+# Mascot (desk pet): only parts.json and the layer PNGs the app loads, not the big source SVGs
+$pet = Join-Path $stage 'assets\mascot'
+New-Item -ItemType Directory -Path (Join-Path $pet 'parts') -Force | Out-Null
+Copy-Item (Join-Path $dir 'assets\mascot\parts.json') $pet
+Copy-Item (Join-Path $dir 'assets\mascot\parts\*.png') (Join-Path $pet 'parts')
 
 @"
 WatchDog v$Version  —  Windows 内存泄漏"体检 + 修复"工具
