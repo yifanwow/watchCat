@@ -309,11 +309,12 @@ namespace WatchDog
                 g.DrawLines(cyan, new[] { new PointF(21, 33), new PointF(31, 38), new PointF(21, 42) });
                 g.DrawLines(cyan, new[] { new PointF(43, 33), new PointF(33, 38), new PointF(43, 42) });
                 g.DrawLine(cyan, 30, 48, 34, 48);
-                // 猫胡子：两边各两根，伸出脸外
+                // 猫胡子：两边各一个横着的 V（尖朝脸、开口朝外），伸出脸外
                 using (Pen wh = new Pen(Color.FromArgb(150, 250, 255), 2f))
                 {
-                    g.DrawLine(wh, 15, 42, 3, 39); g.DrawLine(wh, 15, 46, 3, 48);
-                    g.DrawLine(wh, 49, 42, 61, 39); g.DrawLine(wh, 49, 46, 61, 48);
+                    wh.LineJoin = LineJoin.Bevel;
+                    g.DrawLines(wh, new[] { new PointF(3, 38), new PointF(15, 44), new PointF(3, 50) });
+                    g.DrawLines(wh, new[] { new PointF(61, 38), new PointF(49, 44), new PointF(61, 50) });
                 }
             }
             return b;

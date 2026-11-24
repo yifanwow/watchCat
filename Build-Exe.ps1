@@ -32,10 +32,11 @@ function New-IconPng([int]$s) {
         $g.DrawLines($cyan, [Drawing.PointF[]]@((P 21 33), (P 31 38), (P 21 42)))
         $g.DrawLines($cyan, [Drawing.PointF[]]@((P 43 33), (P 33 38), (P 43 42)))
         $g.DrawLine($cyan, (P 30 48), (P 34 48))
-        # cat whiskers: two on each side, reaching outside the face
+        # cat whiskers: a sideways V on each side (tip toward the face, open outward)
         $wh = New-Object Drawing.Pen([Drawing.Color]::FromArgb(150, 250, 255), [single][math]::Max(2.0, 1.1 / $k))
-        $g.DrawLine($wh, (P 15 42), (P 3 39)); $g.DrawLine($wh, (P 15 46), (P 3 48))
-        $g.DrawLine($wh, (P 49 42), (P 61 39)); $g.DrawLine($wh, (P 49 46), (P 61 48))
+        $wh.LineJoin = 'Bevel'
+        $g.DrawLines($wh, [Drawing.PointF[]]@((P 3 38), (P 15 44), (P 3 50)))
+        $g.DrawLines($wh, [Drawing.PointF[]]@((P 61 38), (P 49 44), (P 61 50)))
         $wh.Dispose()
         $ms = New-Object IO.MemoryStream
         $bmp.Save($ms, [Drawing.Imaging.ImageFormat]::Png)
