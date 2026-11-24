@@ -210,8 +210,10 @@ namespace WatchDog
                 string judge = ri != null && ri.Level >= rt.Level ? ShortTitle(ri, r.Name) : rt.Forecast.Length > 0 ? rt.Forecast : rt.Note;
                 // 每一格的文字只用来判断"变没变"（变了才重画）；真正怎么画见 DrawSubItem
                 List<HistPt> hp; string spark = hist.TryGetValue(r.Name, out hp) && hp.Count > 0 ? hp.Count + "@" + hp[hp.Count - 1].T.Ticks : "";
-                string[] vals = { r.Name, string.Format("{0:N0}", r.PrivMB) + (desc ?? "") + r.Count + ecoNames.Contains(r.Name) + ResLevel(r.Name),
-                    string.Format("{0:N1}", r.CpuPct), string.Format("{0:N1}", r.IoMBs), spark, rt.Text + rt.Level, judge + "\n" + rt.Trend };
+                // 第一格的文字就是程序名（别处用它找程序），标记的变化算进第二格
+                string[] vals = { r.Name,
+                    (desc ?? "") + r.Count + ecoNames.Contains(r.Name) + ResLevel(r.Name) + "|" + (int)(r.PrivMB * 100 / listMaxMB) + "|" + (guarded.ContainsKey(r.Name) ? GuardLevel(r.Name, guarded[r.Name]) : watched.ContainsKey(r.Name) ? 9 : -9),
+                    string.Format("{0:N0}", r.PrivMB), string.Format("{0:N1}", r.CpuPct), string.Format("{0:N1}", r.IoMBs), spark, rt.Text + rt.Level, judge + "\n" + rt.Trend };
                 bool changed = false;
                 for (int k = 0; k < ColCount; k++) if (it.SubItems[k].Text != vals[k]) { it.SubItems[k].Text = vals[k]; changed = true; }
                 if (changed) l.Invalidate(it.Bounds);   // 第一格的第二行（说明、进程数、节能）跟着别的格子变，整行重画

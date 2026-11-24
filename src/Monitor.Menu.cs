@@ -27,8 +27,11 @@ namespace WatchDog
             menu.Renderer = new CyberMenuRenderer(this);
             menu.Font = fCN; menu.ForeColor = cText; menu.ShowImageMargin = true; menu.ImageScalingSize = new Size(22, 22);
 
-            menuTitle = new ToolStripLabel(""); menuTitle.Font = fCNbig; menuTitle.Margin = new Padding(8, 6, 8, 0);
-            menuSub = new ToolStripLabel(""); menuSub.Font = fCN; menuSub.ForeColor = cGray; menuSub.Margin = new Padding(8, 0, 8, 4);
+            // 顶部：程序图标 + 程序名
+            menuTitle = new ToolStripLabel(""); menuTitle.Font = fCNbig; menuTitle.Margin = new Padding(6, 8, 8, 0);
+            menuTitle.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText; menuTitle.TextImageRelation = TextImageRelation.ImageBeforeText;
+            menuTitle.ImageScaling = ToolStripItemImageScaling.SizeToFit; menuTitle.ImageAlign = ContentAlignment.MiddleLeft;
+            menuSub = new ToolStripLabel(""); menuSub.Font = fCN; menuSub.ForeColor = cGray; menuSub.Margin = new Padding(36, 0, 8, 4);   // 和程序名对齐（图标后面）
             menu.Items.Add(menuTitle); menu.Items.Add(menuSub);
 
             ToolStripItem hFix = Header("处理");
@@ -69,7 +72,7 @@ namespace WatchDog
                 if (n == null) { e.Cancel = true; return; }
                 ProcRow r; rows.TryGetValue(n, out r);
                 Rating rt = GetRating(n, r != null ? r.PrivMB : 0);
-                menuTitle.Text = n; menuTitle.ForeColor = rt.Level >= 1 ? LevelColor(rt.Level) : cText;
+                menuTitle.Text = n; menuTitle.Image = GetIcon(n.StartsWith("svc:") ? n : n); menuTitle.ForeColor = rt.Level >= 1 ? LevelColor(rt.Level) : cText;
                 menuSub.Text = (DescOf(n) ?? "") + (r != null && r.Count > 1 ? " · " + r.Count + " 个进程" : "") + " · " + rt.Text + (ecoNames.Contains(n) ? " · 节能中" : "");
                 bool prot = Protected.Contains(n), svc = n.StartsWith("svc:");
                 menuFix.Text = btnPrimary.Text;
@@ -107,7 +110,7 @@ namespace WatchDog
         ToolStripItem Header(string text)
         {
             ToolStripLabel l = new ToolStripLabel("// " + text);
-            l.Font = fTagB; l.ForeColor = cAccent; l.Margin = new Padding(6, 8, 6, 2);
+            l.Font = fCNb; l.ForeColor = cAccent; l.Margin = new Padding(6, 8, 6, 2);   // 中文用雅黑（Bahnschrift 没有中文，会被替换成别的字体）
             l.Tag = new MenuMeta { Header = true };
             menu.Items.Add(l);
             return l;
