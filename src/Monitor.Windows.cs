@@ -55,6 +55,25 @@ namespace WatchDog
                 case "wizard": ShowRuleWizard(pick ?? "lghub_agent"); break;
                 case "reportfile": File.WriteAllText(file, WriteReport(pick ?? "lghub_agent")); break;   // 自测：生成问题报告，把报告路径写进 file
                 case "ask": Ask("将结束 lghub_agent（1 个进程）并重新打开：\nC:\\Program Files\\LGHUB\\lghub_agent.exe\n\n这个程序里没保存的内容可能会丢失。确定吗？"); break;
+                case "eco":   // 自测：对 pick 开节能 → 读优先级 → 关节能 → 再读，结果写进 file
+                    {
+                        string n = pick ?? "notepad"; int ok, fail;
+                        Func<string> pr = () => string.Join(",", ByName(n).Select(x => { try { using (x) return x.PriorityClass.ToString(); } catch { return "?"; } }));
+                        string before = pr();
+                        ApplyEco(n, true, out ok, out fail); string during = pr() + "（成功 " + ok + "，失败 " + fail + "）";
+                        ApplyEco(n, false, out ok, out fail); string after = pr();
+                        File.WriteAllText(file, "之前 " + before + " | 节能 " + during + " | 恢复 " + after + " | 允许 " + EcoAllowed(n) + "，explorer 允许 " + EcoAllowed("explorer") + "，svc:Audiosrv 允许 " + EcoAllowed("svc:Audiosrv"), System.Text.Encoding.UTF8);
+                        break;
+                    }
+                case "menu":   // 右键菜单：选中 pick（默认 claude），在屏幕外弹出来截图
+                    {
+                        selected = pick ?? "claude";
+                        menu.Show(this, new Point(10, 10));
+                        Application.DoEvents();
+                        using (Bitmap b = new Bitmap(menu.Width, menu.Height)) { menu.DrawToBitmap(b, new Rectangle(0, 0, menu.Width, menu.Height)); b.Save(file); }
+                        menu.Close();
+                        break;
+                    }
                 case "prompt": Prompt("监控这个程序", "让看门猫监控 CorsairCpuIdService（现在 52 MB）。\n\n内存超过多少 MB 时提醒你？", "500"); break;
             }
             snapFile = null; snapPick = null;

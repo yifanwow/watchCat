@@ -416,6 +416,7 @@ namespace WatchDog
         // 每分钟一次：规则、忽略设置、历史数据、服务进程号、计划任务状态、最近动作、规则里的文件大小、清理过期的实时数据
         void UpdateSlow()
         {
+            EcoKeep();   // 节能模式：新开的进程也开上
             MaybeUpdateRules(false);   // 公共规则每天从 GitHub 更新一次（设置里可以关）
             LoadRules();
             LoadIgnores();
@@ -719,7 +720,7 @@ namespace WatchDog
                 string note = string.Format("近 {0:N1} 小时涨了 {1:N0} MB（约 {2:N0} MB/小时）", a.Span, a.Growth, a.Slope);
                 if (a.Slope >= LeakSlopeMBh && a.Growth >= LeakGrowthMB && a.R2 >= LeakR2) return new Rating("疑似泄漏", 2, 90, note, fc, trend);
                 if (a.Slope >= RiseSlopeMBh && a.Growth >= RiseGrowthMB && a.R2 >= RiseR2) return new Rating("缓慢上涨", 1, 60, note, fc, trend);
-                if (a.Cv >= WobbleCv) return new Rating("波动大", -1, 10, "忽高忽低，通常是正常使用（比如开关网页）", "", trend);
+                if (a.Cv >= WobbleCv) return new Rating("波动大", -1, 10, "忽高忽低，通常是正常使用", "", trend);
                 return new Rating("稳定", 0, 0, a.Growth >= 50 ? string.Format("近 {0:N1} 小时涨了 {1:N0} MB，涨得慢，暂不算问题", a.Span, a.Growth) : string.Format("近 {0:N1} 小时平稳", a.Span), "", trend);
             }
             Ring ring; series.TryGetValue(name, out ring);

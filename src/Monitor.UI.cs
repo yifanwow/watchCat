@@ -450,7 +450,7 @@ namespace WatchDog
             int y = vy + 48; List<object[]> rects = new List<object[]>();
             foreach (Issue it in issues)
             {
-                if (y + 36 > h - 24) { Txt(g, "…还有更多，见左侧列表（按\"稳定性\"排在最前）", fCN, cGray, 30, y, w - 44, 18); break; }
+                if (y + 36 > h - 24) break;
                 Color c = LevelColor(it.Level);
                 Txt(g, "▲", fCN, c, 14, y, 14, 18);
                 int tw = w - 44;
@@ -572,6 +572,7 @@ namespace WatchDog
             Rule wr;
             if (guarded.TryGetValue(name, out wr) && wr.MinMB > 0) sub += string.Format("  ·  看门猫在管：超过 {0:N0} MB {1}", wr.MinMB, wr.Auto && wr.FixType != "none" ? "且空闲时自动处理" : "时提醒");
             else if (watched.TryGetValue(name, out wr)) sub += string.Format("  ·  ◉ 看门猫监控中（超过 {0} MB {1}）", wr.MinMB, wr.Auto ? "自动重启" : "提醒");
+            if (ecoNames.Contains(name)) sub += "  ·  节能模式中";
             if (FeedbackOf(name) == "bad") sub += "  ·  上次重启后不正常（右键可以建修复规则）";
             else if (IsBrowser(name)) sub += "  ·  浏览器：内存随网页涨落";
             Txt(g, sub, fCN, cGray, 56, 58, w - 70, 18);
@@ -1133,7 +1134,7 @@ namespace WatchDog
             g.FillRectangle(bBg, 0, 0, w, h);
             g.DrawLine(pAccDim, 0, 0, w, 0);
             g.FillRectangle(bHaz, 12, 9, 22, 10);
-            string txt = string.Format("每 5 秒刷新 · 点关闭缩到托盘、后台继续记录 · 本窗口：内存 {0:N0} MB / CPU {1:N2}% / GDI {2} · 实时数据 {3} 条 · 像素十字 = 重点监控（{4} 正常 / 黄 留意 / 红 出问题） · 点卡片 / 看门猫切换走势图 · 点列标题切换排序 · 右键程序可写备注、让看门猫监控它",
+            string txt = string.Format("每 5 秒刷新 · 实时数据 {3} 条 · 像素十字 = 重点监控 · 右键程序可写备注、开节能模式、让看门猫监控它",
                 selfMB, selfCpu, selfGdi, series.Count, Theme.OkName);
             Txt(g, txt, fCN, cGray, 42, 0, w - 54, h);
         }
@@ -1260,54 +1261,6 @@ namespace WatchDog
         }
 
         // ---------- 右键菜单 ----------
-        void BuildMenu()
-        {
-            menu = new ContextMenuStrip();
-            menu.Renderer = new ToolStripProfessionalRenderer(new CyberColors());
-            menu.Font = fCN; menu.ForeColor = cText;
-            menuFix = MenuItem(menu, "修复 / 重启", delegate { FixSelected(); });
-            MenuItem(menu, "结束这个程序", delegate { KillTarget(selected); });
-            MenuItem(menu, "打开文件位置", delegate { OpenLocation(selected); });
-            menuNote = MenuItem(menu, "✎ 写备注说明…", delegate { EditNote(selected); });
-            // 句柄现场：管理员权限下把这个程序手里的句柄（注册表键路径、线程从哪个模块启动……）和当时的电源 / 屏幕事件记成一份文本
-            menuCapture = MenuItem(menu, "立即记录句柄现场（管理员）", delegate { CaptureSelected(); });
-            // 内存泄漏分析：它在忙什么（调用栈）、漏的是什么（内存里重复最多的内容），约 1 分钟，结果用记事本打开
-            menuAnalyze = MenuItem(menu, "分析内存泄漏：它在忙什么、漏的是什么（管理员，约 1 分钟）", delegate { AnalyzeSelected(); });
-            menuIncident = MenuItem(menu, "打开最近的现场记录 / 分析报告", delegate { OpenIncident(selected); });
-            menu.Items.Add(new ToolStripSeparator());
-            menuWatch = MenuItem(menu, "◉ 用看门猫监控（超过上限时提醒）", delegate { AddWatch(selected, false); });
-            menuWatchA = MenuItem(menu, "◉ 用看门猫监控（超过上限时自动重启）", delegate { AddWatch(selected, true); });
-            menuUnwatch = MenuItem(menu, "取消看门猫监控", delegate { RemoveWatch(selected); });
-            menuWizard = MenuItem(menu, "🛠 为它建修复规则（向导：选重启方式，先试一次）…", delegate { ShowRuleWizard(selected); });
-            menuReport = MenuItem(menu, "📝 生成问题报告，发给开发者（不知道怎么处理时）…", delegate { MakeReport(selected); });
-            menu.Items.Add(new ToolStripSeparator());
-            menuSnooze = MenuItem(menu, "忽略这个问题（24 小时内不提醒）", delegate { string[] i = IssueOf(selected); if (i != null) IgnoreIssue(i[0], i[1], false); });
-            menuNormal = MenuItem(menu, "确认正常，不再提醒", delegate
-            {
-                string[] i = IssueOf(selected);
-                if (i != null && Ask(string.Format("确认「{0}」是正常的？以后不再提醒；如果是规则发现的，看门猫也不会再自动处理它。", i[1]))) IgnoreIssue(i[0], i[1], true);
-            });
-            menuRestore = MenuItem(menu, "恢复提醒", delegate { UnignoreName(selected); });
-            menu.Opening += delegate(object s, System.ComponentModel.CancelEventArgs e)
-            {
-                string n = selected;
-                if (n == null) { e.Cancel = true; return; }
-                menuFix.Text = btnPrimary.Text;
-                menuNote.Text = HasNote(n) ? "✎ 修改备注说明…" : "✎ 写备注说明…";
-                menuCapture.Visible = true;
-                menuIncident.Visible = incidents.ContainsKey(n);
-                bool hasIssue = IssueOf(n) != null;
-                menuSnooze.Visible = hasIssue; menuNormal.Visible = hasIssue;
-                menuRestore.Visible = HasIgnore(n);
-                bool isW = watched.ContainsKey(n);
-                menuUnwatch.Visible = isW;
-                menuWatch.Text = isW ? "◉ 修改监控（超过上限时提醒）" : "◉ 用看门猫监控（超过上限时提醒）";
-                menuWatchA.Text = isW ? "◉ 修改监控（超过上限时自动重启）" : "◉ 用看门猫监控（超过上限时自动重启）";
-                menuWatchA.Visible = !Protected.Contains(n);
-                menuWizard.Visible = !Protected.Contains(n);
-            };
-            lv.ContextMenuStrip = menu; lvG.ContextMenuStrip = menu;
-        }
         ToolStripMenuItem MenuItem(ContextMenuStrip m, string text, EventHandler onClick)
         {
             ToolStripMenuItem i = new ToolStripMenuItem(text); i.ForeColor = cText; i.Click += onClick; m.Items.Add(i); return i;
@@ -1394,6 +1347,7 @@ namespace WatchDog
                 if (avatar != null) avatar.Dispose();
                 if (logo != null) logo.Dispose();
                 DisposePet();
+                EcoRestoreAll();   // 开了节能模式的程序恢复原来的优先级
                 if (capIconH != IntPtr.Zero) { Native.DestroyIcon(capIconH); capIconH = IntPtr.Zero; }
             }
             base.Dispose(disposing);

@@ -80,7 +80,7 @@ namespace WatchDog
             SetCard(cardMem, string.Format("{0:N1} / {1:N0} GB", usedGB, totalGB), string.Format("{0}  {1:N0}%", new[] { "正常", "偏高", "紧张" }[lvl], pct), lvl,
                 string.Format("已提交 {0:N1} / {1:N0} GB（含虚拟内存）", commitGB, limitGB), pct);
             Record("sys:mem", usedGB, nowU);
-            string memExtra = string.Format("可用 {0:N1} GB · 70% 以下都算正常", m.ullAvailPhys / 1073741824.0);
+            string memExtra = string.Format("可用 {0:N1} GB", m.ullAvailPhys / 1073741824.0);
             if (tray != null) tray.Text = string.Format("WatchCat · 内存 {0:N1} / {1:N0} GB ({2:N0}%)", usedGB, totalGB, pct);
 
             // 进程采样 + 规则
@@ -149,8 +149,8 @@ namespace WatchDog
             else
             {
                 double mins = (now - last.T).TotalMinutes; bool ok = mins <= 25;
-                string sub = last.HasSelf ? string.Format("每次跑 {0:N1} 秒 · CPU {1:N1} 秒 · 峰值 {2:N0} MB，用完即退出", last.RunMs / 1000, last.SelfCpuSec, last.SelfPeakMB)
-                    : string.Format("每次跑 {0:N1} 秒，用完即退出", last.RunMs / 1000);
+                string sub = last.HasSelf ? string.Format("每次跑 {0:N1} 秒 · CPU {1:N1} 秒 · 峰值 {2:N0} MB", last.RunMs / 1000, last.SelfCpuSec, last.SelfPeakMB)
+                    : string.Format("每次跑 {0:N1} 秒", last.RunMs / 1000);
                 SetDog("上次 " + Ago(last.T), ok ? "运行中" : "可能停了", ok ? 0 : 2, sub, Math.Min(100, mins * 10));
             }
 
