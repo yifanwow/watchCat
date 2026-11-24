@@ -1,4 +1,5 @@
 {
+  "version": 2,
   "canvas": {
     "width": 512,
     "height": 1024
@@ -24,10 +25,10 @@
     {
       "id": "body",
       "file": "parts/body.png",
-      "x": 1,
+      "x": 70,
       "y": 183,
-      "width": 511,
-      "height": 758,
+      "width": 415,
+      "height": 763,
       "pivotX": 256.05,
       "pivotY": 427.1,
       "z": 1,
@@ -36,10 +37,10 @@
     {
       "id": "arm-left",
       "file": "parts/arm-left.png",
-      "x": 314,
-      "y": 455,
-      "width": 45,
-      "height": 131,
+      "x": 320,
+      "y": 450,
+      "width": 41,
+      "height": 137,
       "pivotX": 324.8,
       "pivotY": 473.85,
       "z": 2,
@@ -48,14 +49,41 @@
     {
       "id": "arm-right",
       "file": "parts/arm-right.png",
-      "x": 61,
-      "y": 254,
-      "width": 98,
-      "height": 141,
+      "x": 51,
+      "y": 312,
+      "width": 200,
+      "height": 385,
       "pivotX": 147.7,
       "pivotY": 371.0,
       "z": 3,
-      "visible": true
+      "visible": true,
+      "slot": "arm-right"
+    },
+    {
+      "id": "arm-right-wave-a",
+      "file": "parts/arm-right-wave-a.png",
+      "x": 22,
+      "y": 253,
+      "width": 229,
+      "height": 400,
+      "pivotX": 147.7,
+      "pivotY": 371.0,
+      "z": 3,
+      "visible": false,
+      "slot": "arm-right"
+    },
+    {
+      "id": "arm-right-wave-b",
+      "file": "parts/arm-right-wave-b.png",
+      "x": 22,
+      "y": 253,
+      "width": 229,
+      "height": 400,
+      "pivotX": 147.7,
+      "pivotY": 371.0,
+      "z": 3,
+      "visible": false,
+      "slot": "arm-right"
     },
     {
       "id": "head",
@@ -72,98 +100,144 @@
     {
       "id": "eyes-open",
       "file": "parts/eyes-open.png",
-      "x": 208,
+      "x": 207,
       "y": 220,
-      "width": 74,
+      "width": 75,
       "height": 38,
       "pivotX": 242.85,
       "pivotY": 235.7,
       "z": 5,
-      "visible": true
+      "visible": true,
+      "slot": "eyes"
     },
     {
       "id": "eyes-half",
       "file": "parts/eyes-half.png",
-      "x": 194,
-      "y": 217,
-      "width": 87,
-      "height": 39,
+      "x": 207,
+      "y": 220,
+      "width": 75,
+      "height": 38,
       "pivotX": 242.85,
       "pivotY": 235.7,
       "z": 5,
-      "visible": false
+      "visible": false,
+      "slot": "eyes"
     },
     {
       "id": "eyes-closed",
       "file": "parts/eyes-closed.png",
-      "x": 194,
-      "y": 217,
-      "width": 87,
-      "height": 39,
+      "x": 207,
+      "y": 220,
+      "width": 75,
+      "height": 38,
       "pivotX": 242.85,
       "pivotY": 235.7,
       "z": 5,
-      "visible": false
+      "visible": false,
+      "slot": "eyes"
+    },
+    {
+      "id": "eyes-happy",
+      "file": "parts/eyes-happy.png",
+      "x": 207,
+      "y": 220,
+      "width": 75,
+      "height": 38,
+      "pivotX": 242.85,
+      "pivotY": 235.7,
+      "z": 5,
+      "visible": false,
+      "slot": "eyes"
+    },
+    {
+      "id": "eye-ring",
+      "file": "parts/eye-ring.png",
+      "x": 196,
+      "y": 218,
+      "width": 49,
+      "height": 38,
+      "pivotX": 225,
+      "pivotY": 239,
+      "z": 6,
+      "visible": true
     },
     {
       "id": "brows-normal",
       "file": "parts/brows-normal.png",
-      "x": 213,
-      "y": 218,
-      "width": 63,
-      "height": 16,
+      "x": 210,
+      "y": 216,
+      "width": 69,
+      "height": 17,
       "pivotX": 243.95,
       "pivotY": 225.25,
-      "z": 6,
-      "visible": true
+      "z": 7,
+      "visible": true,
+      "slot": "brows"
     },
     {
       "id": "brows-worried",
       "file": "parts/brows-worried.png",
-      "x": 213,
-      "y": 219,
-      "width": 61,
-      "height": 15,
+      "x": 210,
+      "y": 216,
+      "width": 69,
+      "height": 17,
       "pivotX": 243.95,
       "pivotY": 225.25,
-      "z": 6,
-      "visible": false
+      "z": 7,
+      "visible": false,
+      "slot": "brows"
     },
     {
       "id": "mouth-smile",
       "file": "parts/mouth-smile.png",
-      "x": 237,
-      "y": 251,
-      "width": 27,
-      "height": 14,
+      "x": 235,
+      "y": 250,
+      "width": 30,
+      "height": 18,
       "pivotX": 250.55,
       "pivotY": 258.25,
-      "z": 7,
-      "visible": true
+      "z": 8,
+      "visible": true,
+      "slot": "mouth"
     },
     {
-      "id": "mouth-open",
-      "file": "parts/mouth-open.png",
-      "x": 238,
-      "y": 253,
-      "width": 23,
-      "height": 13,
+      "id": "mouth-talk-a",
+      "file": "parts/mouth-talk-a.png",
+      "x": 235,
+      "y": 250,
+      "width": 30,
+      "height": 18,
       "pivotX": 250.55,
       "pivotY": 258.25,
-      "z": 7,
-      "visible": false
+      "z": 8,
+      "visible": false,
+      "slot": "mouth"
+    },
+    {
+      "id": "mouth-talk-o",
+      "file": "parts/mouth-talk-o.png",
+      "x": 235,
+      "y": 250,
+      "width": 30,
+      "height": 18,
+      "pivotX": 250.55,
+      "pivotY": 258.25,
+      "z": 8,
+      "visible": false,
+      "slot": "mouth"
     },
     {
       "id": "mouth-worried",
       "file": "parts/mouth-worried.png",
-      "x": 238,
-      "y": 254,
-      "width": 23,
-      "height": 10,
+      "x": 235,
+      "y": 250,
+      "width": 30,
+      "height": 18,
       "pivotX": 250.55,
       "pivotY": 258.25,
-      "z": 7,
-      "visible": false
+      "z": 8,
+      "visible": false,
+      "slot": "mouth"
     },
     {
       "id": "hair-front",
@@ -174,7 +248,7 @@
       "height": 119,
       "pivotX": 242.85,
       "pivotY": 196.1,
-      "z": 8,
+      "z": 9,
       "visible": true
     },
     {
@@ -186,7 +260,7 @@
       "height": 208,
       "pivotX": 240.1,
       "pivotY": 173.0,
-      "z": 9,
+      "z": 10,
       "visible": true
     },
     {
@@ -198,7 +272,7 @@
       "height": 78,
       "pivotX": 470.0,
       "pivotY": 179.05,
-      "z": 10,
+      "z": 11,
       "visible": true
     },
     {
@@ -206,11 +280,11 @@
       "file": "parts/glitch.png",
       "x": 8,
       "y": 129,
-      "width": 443,
-      "height": 755,
+      "width": 437,
+      "height": 182,
       "pivotX": 256.6,
       "pivotY": 518.4,
-      "z": 11,
+      "z": 12,
       "visible": true
     }
   ]

@@ -287,48 +287,31 @@ namespace WatchDog
                 try { return b.GetHicon(); } catch { return IntPtr.Zero; }
             }
         }
-        // 猫 logo：网站图标（favicon.svg，64×64）的尖耳朵脸 + 猫胡子，只画一次缓存成位图
+        // WatchCat 像素 logo：48×48 的像素格，编译时从 assets\mascot\watchcat-logo-1536.png 取出来嵌在 exe 里
         Bitmap logo;
-        static Bitmap CatLogo(int size)
+        static Bitmap LoadLogo()
         {
-            Bitmap b = new Bitmap(size, size);
-            using (Graphics g = Graphics.FromImage(b))
-            using (GraphicsPath bg = new GraphicsPath())
-            using (SolidBrush fill = new SolidBrush(Color.FromArgb(11, 14, 19)))
-            using (Pen red = new Pen(Color.FromArgb(250, 76, 89), 3.2f))
-            using (Pen cyan = new Pen(Color.FromArgb(150, 250, 255), 3f))
+            try
             {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.ScaleTransform(size / 64f, size / 64f);
-                const float r = 22;   // 圆角 rx = 11
-                bg.AddArc(0, 0, r, r, 180, 90); bg.AddArc(64 - r, 0, r, r, 270, 90);
-                bg.AddArc(64 - r, 64 - r, r, r, 0, 90); bg.AddArc(0, 64 - r, r, r, 90, 90); bg.CloseFigure();
-                g.FillPath(fill, bg);
-                red.LineJoin = LineJoin.Bevel; cyan.LineJoin = LineJoin.Bevel;
-                g.DrawPolygon(red, new[] { new PointF(10, 26), new PointF(10, 10), new PointF(24, 20), new PointF(40, 20), new PointF(54, 10), new PointF(54, 26), new PointF(47, 51), new PointF(17, 51) });
-                g.DrawLines(cyan, new[] { new PointF(21, 33), new PointF(31, 38), new PointF(21, 42) });
-                g.DrawLines(cyan, new[] { new PointF(43, 33), new PointF(33, 38), new PointF(43, 42) });
-                g.DrawLine(cyan, 30, 48, 34, 48);
-                // 猫胡子：两边各一个横着的 V（尖朝脸、开口朝外），伸出脸外
-                using (Pen wh = new Pen(Color.FromArgb(150, 250, 255), 2f))
-                {
-                    wh.LineJoin = LineJoin.Bevel;
-                    g.DrawLines(wh, new[] { new PointF(3, 38), new PointF(15, 44), new PointF(3, 50) });
-                    g.DrawLines(wh, new[] { new PointF(61, 38), new PointF(49, 44), new PointF(61, 50) });
-                }
+                using (Stream st = typeof(Monitor).Assembly.GetManifestResourceStream("WatchCat.logo48.png"))
+                    if (st != null) using (Bitmap b = new Bitmap(st)) return new Bitmap(b);
             }
-            return b;
+            catch { }
+            return new Bitmap(48, 48);
         }
         void PaintHeader(object s, PaintEventArgs e)
         {
             Graphics g = e.Graphics; int w = header.Width, h = header.Height;
             g.FillRectangle(bBg, 0, 0, w, h);
             Scanlines(g, w, h);
-            // 猫 logo
-            if (logo == null) logo = CatLogo(32);
-            g.DrawImage(logo, 12, 8, 32, 32);
+            // 像素猫 logo：按整倍数放大（不糊），48 像素格里猫脸大约占中间 40 × 33
+            if (logo == null) logo = LoadLogo();
+            InterpolationMode im = g.InterpolationMode; PixelOffsetMode pm = g.PixelOffsetMode;
+            g.InterpolationMode = InterpolationMode.NearestNeighbor; g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.DrawImage(logo, new Rectangle(4, 1, 48, 48));
+            g.InterpolationMode = im; g.PixelOffsetMode = pm;
             // 标题：红色错位的"故障"重影 + 荧光蓝本体
-            const int tx = 50, dx = tx - 16;   // logo 占的宽度，后面的东西整体右移
+            const int tx = 56, dx = tx - 16;   // logo 占的宽度，后面的东西整体右移
             if (tick % 6 == 3) Txt(g, "WATCHCAT", fHead, cRed, tx + 3, 8, 200, 34);
             else Txt(g, "WATCHCAT", fHead, cRedDim, tx + 2, 7, 200, 34);
             Txt(g, "WATCHCAT", fHead, cCyan, tx, 6, 200, 34);

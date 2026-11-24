@@ -1,4 +1,4 @@
-// 看板娘（桌宠）：贴在主窗口右边的透明小窗口，跟着主窗口移动、缩放、隐藏 / 最小化
+// 看板娘 Fegmi（桌宠）：贴在主窗口右边的透明小窗口，跟着主窗口移动、缩放、隐藏 / 最小化
 // 素材在 assets\mascot\：parts.json + parts\*.png（512×1024 画布对齐，每个部件一张透明 PNG）
 //
 // 怎么动：按显示大小把每个部件裁好、缩好缓存起来（约 2–3 MB），每帧按姿势叠到一块固定的位图上，用分层窗口（每像素透明）显示。
@@ -22,6 +22,8 @@ namespace WatchDog
 {
     class PetPart { public string Id, File, Slot; public Rectangle R; public int Z; public PointF Pivot; public bool Visible; }
     class PetLayer { public string Id, Slot; public bool Default; public Bitmap B; public Rectangle Dst; public PointF Pivot; public int Z; }
+    class PetAnimFrame { public string Slot, Frame; public double Sec; }
+
     // 一帧的姿势：帽子 / 星星的角度、故障层错位，以及每个"组"显示哪一张（没写的组用默认那张）
     class PetPose
     {
@@ -110,7 +112,7 @@ namespace WatchDog
         string petLastKey = "";
         Point petAt;               // 看板娘窗口现在的位置
         Random petRnd = new Random();
-        double blinkAt = 2, waveFrom = -9, talkUntil = -1, glitchAt = 3, bubbleUntil = -1, sizeChangedAt = -9;
+        double blinkAt = 2, waveFrom = -9, talkUntil = -1, talkFrom = -9, glitchAt = 3, bubbleUntil = -1, sizeChangedAt = -9;
         int petMood;               // 0 正常 / 1 留意 / 2 出问题：决定平时的表情
         int sayMood;               // 正在说的这句话的表情
         string bubbleText, bubbleTarget; int bubbleLevel;
@@ -119,6 +121,9 @@ namespace WatchDog
         ContextMenuStrip petMenu;
         string PetDir { get { return Path.Combine(ToolDir, "assets", "mascot"); } }
         int petRig;   // parts.json 的 version
+        double petScale = 1.0;   // 设置里的大小倍数 0.7–1.7（1.0 = 主窗口高度的 60%）
+        // 动画：名字 → 帧序列（每帧：哪一组、显示哪一张、多少秒）。parts.json 的 "animations" 可以覆盖
+        Dictionary<string, List<PetAnimFrame>> petAnims = new Dictionary<string, List<PetAnimFrame>>();
 
         // 开关和拖动后的位置存在 data\settings.json；读一次缓存起来（主窗口拖动时会频繁用到，不每次读文件）
         bool petOn = true; Point petOfs;
@@ -127,8 +132,16 @@ namespace WatchDog
             Dictionary<string, object> d = ReadSettings();
             petOn = !d.ContainsKey("pet") || Json.Bool(d, "pet");
             petOfs = new Point((int)Json.Num(d, "petDX"), (int)Json.Num(d, "petDY"));
+            double sc = Json.Num(d, "petScale"); petScale = sc >= 0.7 && sc <= 1.7 ? sc : 1.0;
         }
         bool PetOn() { return petOn; }
+        // 设置里改大小：存起来，按新大小重新缩部件（PetTick 里发现高度不对就会重建）
+        void SetPetScale(double v)
+        {
+            petScale = Math.Max(0.7, Math.Min(1.7, Math.Round(v, 1)));
+            WriteSetting("petScale", petScale);
+            if (pet != null && pet.Visible) { sizeChangedAt = -9; PetTick(); }
+        }
         Point PetOffset() { return petOfs; }
         void SetPetOffset(Point o) { petOfs = o; WriteSetting("petDX", o.X); WriteSetting("petDY", o.Y); }
 
@@ -157,6 +170,7 @@ namespace WatchDog
                 }
                 petParts = petParts.OrderBy(x => x.Z).ToList();
                 petRig = (int)Json.Num(d, "version");   // 2 = 按新要求重做的素材（眼睛 / 嘴 / 挥手都是换帧）
+                LoadPetAnims(d);
                 List<PetPart> vis = petParts.Where(x => x.Visible).ToList();
                 if (vis.Count == 0) return false;
                 petBox = vis[0].R; foreach (PetPart x in vis) petBox = Rectangle.Union(petBox, x.R);
@@ -164,6 +178,47 @@ namespace WatchDog
             }
             catch { return false; }
         }
+
+        // "animations": { "blink": [ { "frame": "eyes-half", "ms": 50 }, ... ], "wave": [...], "talk": [...] }
+        // 帧所属的组按部件的 slot 找；没写的动画按帧名自动组合，以后多画过渡帧（比如 arm-right-raise-1、arm-right-wave-c）不用改代码
+        void LoadPetAnims(Dictionary<string, object> d)
+        {
+            petAnims.Clear();
+            Dictionary<string, string> slotOf = new Dictionary<string, string>();
+            foreach (PetPart p in petParts) if (p.Slot != null) slotOf[p.Id] = p.Slot;
+            Func<string, double, PetAnimFrame> F = (id, sec) => id != null && slotOf.ContainsKey(id) ? new PetAnimFrame { Slot = slotOf[id], Frame = id, Sec = sec } : null;
+            Dictionary<string, object> custom = Json.Obj(d, "animations");
+            if (custom != null)
+                foreach (KeyValuePair<string, object> kv in custom)
+                {
+                    List<PetAnimFrame> l = new List<PetAnimFrame>();
+                    foreach (Dictionary<string, object> f in Json.Objects(kv.Value)) { PetAnimFrame x = F(Json.Str(f, "frame"), Math.Max(0.02, Json.Num(f, "ms") / 1000)); if (x != null) l.Add(x); }
+                    if (l.Count > 0) petAnims[kv.Key] = l;
+                }
+            Func<string[], double, List<PetAnimFrame>> Seq = (ids, sec) => ids.Select(id => F(id, sec)).Where(x => x != null).ToList();
+            if (!petAnims.ContainsKey("blink")) petAnims["blink"] = Seq(new[] { "eyes-half", "eyes-closed", "eyes-closed", "eyes-half" }, 0.045);
+            if (!petAnims.ContainsKey("talk")) petAnims["talk"] = Seq(new[] { "mouth-talk-a", "mouth-talk-o", "mouth-smile", "mouth-talk-a", "mouth-smile", "mouth-talk-o", "mouth-talk-a", "mouth-smile" }, 0.13);
+            if (!petAnims.ContainsKey("wave"))
+            {
+                // 抬手过渡帧（arm-right-raise-1, -2 …）→ 挥手帧来回 3 遍（arm-right-wave-a, -b …）→ 过渡帧倒着放下
+                List<string> raise = slotOf.Keys.Where(k => k.StartsWith("arm-right-raise-")).OrderBy(k => k).ToList();
+                List<string> wave = slotOf.Keys.Where(k => k.StartsWith("arm-right-wave-")).OrderBy(k => k).ToList();
+                List<PetAnimFrame> l = Seq(raise.ToArray(), 0.06);
+                for (int i = 0; i < 3; i++) l.AddRange(Seq(wave.ToArray(), 0.2));
+                raise.Reverse(); l.AddRange(Seq(raise.ToArray(), 0.06));
+                petAnims["wave"] = l;
+            }
+        }
+        // 动画开始 e 秒后，应该显示哪一帧（loop = 循环播放）；放完了返回 null
+        PetAnimFrame AnimAt(string name, double e, bool loop)
+        {
+            List<PetAnimFrame> l; if (e < 0 || !petAnims.TryGetValue(name, out l) || l.Count == 0) return null;
+            double total = l.Sum(f => f.Sec);
+            if (loop) e %= total; else if (e >= total) return null;
+            foreach (PetAnimFrame f in l) { if (e < f.Sec) return f; e -= f.Sec; }
+            return null;
+        }
+        double AnimLength(string name) { List<PetAnimFrame> l; return petAnims.TryGetValue(name, out l) ? l.Sum(f => f.Sec) : 0; }
 
         float PetScale(int h) { return (float)h / (petBox.Height + 2 * PetPadC); }
         Size PetSize(int h) { float k = PetScale(h); return new Size((int)Math.Ceiling((petBox.Width + 2 * PetPadC) * k), h); }
@@ -234,18 +289,16 @@ namespace WatchDog
             bool worried = t < bubbleUntil && sayMood >= 2;                                 // 只在说到问题时皱眉，平时不苦着脸
             if (worried) { p.Frames["brows"] = "brows-worried"; p.Frames["mouth"] = "mouth-worried"; }
             if (petRig < 2) return p;
-            double b = t - blinkAt;
-            if (b >= 0 && b < 0.18) p.Frames["eyes"] = b < 0.05 || b >= 0.13 ? "eyes-half" : "eyes-closed";
+            PetAnimFrame f = AnimAt("blink", t - blinkAt, false);
+            if (f != null) p.Frames[f.Slot] = f.Frame;
+            else if (t < talkUntil && sayMood == 0 && HasLayer("eyes-happy")) p.Frames["eyes"] = "eyes-happy";   // 说好消息时笑眯眯
             if (t < talkUntil)
             {
-                // 说话：张嘴 / 小圆嘴 / 合上，节奏不完全规律，看起来像在念字
-                int k = (int)(t / 0.13);
-                string[] cyc = { "mouth-talk-a", "mouth-talk-o", null, "mouth-talk-a", null, null, "mouth-talk-o", null };
-                string m = cyc[k % cyc.Length];
-                if (m != null) p.Frames["mouth"] = m;
+                f = AnimAt("talk", t - talkFrom, true);
+                if (f != null && !(worried && f.Frame == "mouth-smile")) p.Frames[f.Slot] = f.Frame;   // 担心时说话的间隙用担心的嘴
             }
-            double w = t - waveFrom;
-            if (w >= 0 && w < 1.5) p.Frames["arm-right"] = ((int)(w / 0.22)) % 2 == 0 ? "arm-right-wave-a" : "arm-right-wave-b";
+            f = AnimAt("wave", t - waveFrom, false);
+            if (f != null) p.Frames[f.Slot] = f.Frame;
             return p;
         }
 
@@ -253,8 +306,8 @@ namespace WatchDog
         {
             if (selfTest || !LoadPetParts()) return;
             LoadPetSettings();
-            pet = new LayeredWindow("WatchCat 看板娘"); pet.Owner = this; pet.Cursor = Cursors.Hand;
-            bubble = new LayeredWindow("WatchCat 看板娘说的话"); bubble.Owner = this; bubble.Cursor = Cursors.Hand;
+            pet = new LayeredWindow("Fegmi · WatchCat 看板娘"); pet.Owner = this; pet.Cursor = Cursors.Hand;
+            bubble = new LayeredWindow("Fegmi 说的话"); bubble.Owner = this; bubble.Cursor = Cursors.Hand;
             petTimer = new Timer(); petTimer.Interval = 100; petTimer.Tick += delegate { PetTick(); };
             petClock.Start();
             LocationChanged += delegate { PlacePet(); };
@@ -293,9 +346,9 @@ namespace WatchDog
             };
 
             petMenu = new ContextMenuStrip(); petMenu.Renderer = menu.Renderer; petMenu.Font = fCN;
-            MenuItem(petMenu, "说说现在的情况", delegate { PetStatus(); });
+            MenuItem(petMenu, "Fegmi，说说现在的情况", delegate { PetStatus(); });
             MenuItem(petMenu, "回到默认位置（主窗口右边）", delegate { SetPetOffset(Point.Empty); PlacePet(); });
-            MenuItem(petMenu, "先藏起来（可以在设置里再打开）", delegate { SetPetOn(false); });
+            MenuItem(petMenu, "让 Fegmi 先休息（设置里可以再召唤）", delegate { SetPetOn(false); });
             pet.ContextMenuStrip = petMenu;
         }
 
@@ -310,7 +363,7 @@ namespace WatchDog
         int PetWantH()
         {
             Rectangle wa = Screen.FromControl(this).WorkingArea;
-            return Math.Min(wa.Height - 20, Math.Max(360, (int)(Height * 0.6)));
+            return Math.Min(wa.Height - 20, (int)(Math.Max(360, Height * 0.6) * petScale));
         }
         // 默认位置：主窗口右边、底部对齐
         Point PetAnchor(Size s) { return new Point(Right - 4, Bottom - s.Height); }
@@ -375,7 +428,7 @@ namespace WatchDog
                 pet.Hide(); PlacePet();   // 重新放（大小变了）
                 return;
             }
-            if (t > blinkAt + 0.25) blinkAt = t + 2.5 + petRnd.NextDouble() * 3.5;          // 下次眨眼：2.5–6 秒后
+            if (t > blinkAt + AnimLength("blink") + 0.05) blinkAt = t + 2.5 + petRnd.NextDouble() * 3.5;          // 下次眨眼：2.5–6 秒后
             if (t > glitchAt + 0.3) glitchAt = t + 4 + petRnd.NextDouble() * 5;             // 下次故障闪：4–9 秒后
             if (bubbleUntil > 0 && t > bubbleUntil) HideBubble();
             RenderPet(false);
@@ -395,9 +448,9 @@ namespace WatchDog
                 petGreeted = true; petSpoken = now;
                 waveFrom = petClock.Elapsed.TotalSeconds + 0.4;
                 Issue top = issues.FirstOrDefault(i => i.Level >= 1);
-                if (verdict[0] == "数据收集中" || verdict[0] == "正在检查…") PetSay("我是看门猫～ 正在熟悉你的电脑，开着窗口 10 分钟后就能告诉你谁在漏内存。", 0, null, 0);
-                else if (top == null) PetSay("我是看门猫～ 帮你看过了，内存一切正常。", 0, null, 0);
-                else PetSay("我是看门猫～ " + verdict[0] + "：" + top.Title + "。", top.Level, top.Target, top.Level);
+                if (verdict[0] == "数据收集中" || verdict[0] == "正在检查…") PetSay("我是 Fegmi～ 正在熟悉你的电脑，开着窗口 10 分钟后就能告诉你谁在漏内存。", 0, null, 0);
+                else if (top == null) PetSay("我是 Fegmi～ 帮你看过了，内存一切正常。", 0, null, 0);
+                else PetSay("我是 Fegmi～ " + verdict[0] + "：" + top.Title + "。", top.Level, top.Target, top.Level);
                 return;
             }
             Issue fresh = issues.Where(i => i.Key != null && i.Level >= 1 && !petSpoken.Contains(i.Key)).OrderByDescending(i => i.Level).FirstOrDefault();
@@ -422,7 +475,7 @@ namespace WatchDog
             if (pet == null || !pet.Visible) return;
             double t = petClock.Elapsed.TotalSeconds;
             bubbleText = text; bubbleTarget = target; bubbleLevel = Math.Max(0, level); sayMood = mood;
-            talkUntil = t + Math.Min(2.6, 0.5 + text.Length * 0.04);
+            talkFrom = t; talkUntil = t + Math.Min(2.6, 0.5 + text.Length * 0.04);
             bubbleUntil = t + (level >= 1 ? 14 : 8) + text.Length * 0.05;
             RenderBubble();
             PlaceBubble();
@@ -460,7 +513,7 @@ namespace WatchDog
                     using (Pen scan = new Pen(Color.FromArgb(14, cAccent))) for (int y = 3; y < bh; y += 3) g.DrawLine(scan, 2, y, w - 3, y);
                     using (Pen pe = new Pen(edge, 1.4f)) g.DrawPolygon(pe, poly);
                     using (SolidBrush b = new SolidBrush(edge)) g.FillRectangle(b, 0, 0, (int)(fpx * 3), 3);
-                    using (SolidBrush b = new SolidBrush(cAccent)) g.DrawString("// CAT-04  看门猫", ft, b, pad, pad * 0.6f);
+                    using (SolidBrush b = new SolidBrush(cAccent)) g.DrawString("// FEGMI  看门猫值班员", ft, b, pad, pad * 0.6f);
                     using (SolidBrush b = new SolidBrush(cText)) g.DrawString(bubbleText, f, b, new RectangleF(pad, pad * 0.6f + titleH, w - 2 * pad, ts.Height + 4));
                 }
             }

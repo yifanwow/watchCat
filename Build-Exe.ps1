@@ -8,43 +8,39 @@ $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
 if (-not (Test-Path $csc)) { Write-Host 'csc.exe (.NET Framework 4) not found'; exit 1 }
 
-# ---- Icon: the cat logo (pointy-eared face from watchdog.yifanovo.com favicon.svg + whiskers, 64x64 units), PNG images packed into an .ico ----
+# ---- Icon: the WatchCat pixel logo (assets\mascot\watchcat-logo-1536.png = a 48x48 pixel grid drawn at 32 px per pixel) ----
+# Read the grid back as a crisp 48x48 image; big icon sizes are whole-number enlargements of it (stays pixel-sharp),
+# 32 / 24 / 16 are smooth reductions of the big picture. The 48x48 grid is also embedded in the exe for the title bar.
+$logoSrc = Join-Path $dir 'assets\mascot\watchcat-logo-1536.png'
+if (-not (Test-Path $logoSrc)) { Write-Host "logo not found: $logoSrc"; exit 1 }
+$big = [Drawing.Bitmap]::FromFile($logoSrc)
+$grid = New-Object Drawing.Bitmap(48, 48)
+$cell = $big.Width / 48
+for ($y = 0; $y -lt 48; $y++) { for ($x = 0; $x -lt 48; $x++) { $grid.SetPixel($x, $y, $big.GetPixel([int]($x * $cell + $cell / 2), [int]($y * $cell + $cell / 2))) } }
+$logo48 = Join-Path $env:TEMP 'WatchCat.logo48.png'
+$grid.Save($logo48, [Drawing.Imaging.ImageFormat]::Png)
 function New-IconPng([int]$s) {
     $bmp = New-Object Drawing.Bitmap($s, $s)
     $g = [Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode = 'AntiAlias'
-    $k = $s / 64.0
-    $g.ScaleTransform([single]$k, [single]$k)
-    # small sizes: thicker lines so the shape stays readable (at least ~1.3 px)
-    $wr = [single][math]::Max(3.2, 1.3 / $k); $wc = [single][math]::Max(3.0, 1.3 / $k)
-    $bg = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(11, 14, 19))
-    $red = New-Object Drawing.Pen([Drawing.Color]::FromArgb(250, 76, 89), $wr)
-    $cyan = New-Object Drawing.Pen([Drawing.Color]::FromArgb(150, 250, 255), $wc)
-    $red.LineJoin = 'Bevel'; $cyan.LineJoin = 'Bevel'
-    $path = New-Object Drawing.Drawing2D.GraphicsPath
-    function P($x, $y) { New-Object Drawing.PointF([single]$x, [single]$y) }
     try {
-        $r = 22   # corner radius 11
-        $path.AddArc(0, 0, $r, $r, 180, 90); $path.AddArc(64 - $r, 0, $r, $r, 270, 90)
-        $path.AddArc(64 - $r, 64 - $r, $r, $r, 0, 90); $path.AddArc(0, 64 - $r, $r, $r, 90, 90); $path.CloseFigure()
-        $g.FillPath($bg, $path)
-        $g.DrawPolygon($red, [Drawing.PointF[]]@((P 10 26), (P 10 10), (P 24 20), (P 40 20), (P 54 10), (P 54 26), (P 47 51), (P 17 51)))
-        $g.DrawLines($cyan, [Drawing.PointF[]]@((P 21 33), (P 31 38), (P 21 42)))
-        $g.DrawLines($cyan, [Drawing.PointF[]]@((P 43 33), (P 33 38), (P 43 42)))
-        $g.DrawLine($cyan, (P 30 48), (P 34 48))
-        # cat whiskers: a sideways V on each side (tip toward the face, open outward)
-        $wh = New-Object Drawing.Pen([Drawing.Color]::FromArgb(150, 250, 255), [single][math]::Max(2.0, 1.1 / $k))
-        $wh.LineJoin = 'Bevel'
-        $g.DrawLines($wh, [Drawing.PointF[]]@((P 3 38), (P 15 44), (P 3 50)))
-        $g.DrawLines($wh, [Drawing.PointF[]]@((P 61 38), (P 49 44), (P 61 50)))
-        $wh.Dispose()
+        $n = [math]::Floor($s / 48)
+        if ($n -ge 1) {
+            # whole-number enlargement of the pixel grid, centered
+            $g.InterpolationMode = 'NearestNeighbor'; $g.PixelOffsetMode = 'Half'
+            $o = [int](($s - 48 * $n) / 2)
+            $g.DrawImage($grid, (New-Object Drawing.Rectangle($o, $o, (48 * $n), (48 * $n))))
+        } else {
+            $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'
+            $g.DrawImage($big, (New-Object Drawing.Rectangle(0, 0, $s, $s)))
+        }
         $ms = New-Object IO.MemoryStream
         $bmp.Save($ms, [Drawing.Imaging.ImageFormat]::Png)
         , $ms.ToArray()
-    } finally { $g.Dispose(); $bmp.Dispose(); $bg.Dispose(); $red.Dispose(); $cyan.Dispose(); $path.Dispose() }
+    } finally { $g.Dispose(); $bmp.Dispose() }
 }
-$sizes = 256, 48, 32, 16
+$sizes = 256, 96, 48, 32, 24, 16
 $pngs = @(foreach ($s in $sizes) { , (New-IconPng $s) })
+$big.Dispose(); $grid.Dispose()
 $ico = Join-Path $dir 'WatchDog.ico'
 $fs = [IO.File]::Create($ico); $bw = New-Object IO.BinaryWriter($fs)
 try {
@@ -89,11 +85,11 @@ if ($wasRunning) {
     foreach ($p in $running) { $p.WaitForExit(5000) | Out-Null }
     if (@(Get-Process WatchDog -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe })) { Write-Host 'WatchDog is still running - exit it from the tray icon first (right-click -> 退出).'; exit 1 }
 }
-& $csc /nologo /target:winexe /optimize+ /codepage:65001 "/win32icon:$ico" "/win32manifest:$manifest" "/out:$exe" `
+& $csc /nologo /target:winexe /optimize+ /codepage:65001 "/win32icon:$ico" "/win32manifest:$manifest" "/out:$exe" "/resource:$logo48,WatchCat.logo48.png" `
     /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll `
     /reference:System.Web.Extensions.dll /reference:Microsoft.VisualBasic.dll $src
 $ok = $LASTEXITCODE -eq 0
-Remove-Item $manifest -ErrorAction SilentlyContinue
+Remove-Item $manifest, $logo48 -ErrorAction SilentlyContinue
 if ($ok -and (Test-Path $exe)) { Write-Host "Built: $exe" } else { Write-Host 'Build failed'; exit 1 }
 # it was running before: start the new version. Through explorer.exe, so it is not a child of whatever ran this
 # script (e.g. a Store app like Claude desktop) - those kill their whole process tree when they update
