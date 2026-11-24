@@ -213,7 +213,7 @@ namespace WatchDog
                 // 第一格的文字就是程序名（别处用它找程序），标记的变化算进第二格
                 string[] vals = { r.Name,
                     (desc ?? "") + r.Count + ecoNames.Contains(r.Name) + ResLevel(r.Name) + "|" + (int)(r.PrivMB * 100 / listMaxMB) + "|" + (guarded.ContainsKey(r.Name) ? GuardLevel(r.Name, guarded[r.Name]) : watched.ContainsKey(r.Name) ? 9 : -9),
-                    string.Format("{0:N0}", r.PrivMB), string.Format("{0:N1}", r.CpuPct), string.Format("{0:N1}", r.IoMBs), spark, rt.Text + rt.Level, judge + "\n" + rt.Trend };
+                    rt.Text + rt.Level, string.Format("{0:N0}", r.PrivMB), string.Format("{0:N1}", r.CpuPct), string.Format("{0:N1}", r.IoMBs), spark, judge + "\n" + rt.Trend };
                 bool changed = false;
                 for (int k = 0; k < ColCount; k++) if (it.SubItems[k].Text != vals[k]) { it.SubItems[k].Text = vals[k]; changed = true; }
                 if (changed) l.Invalidate(it.Bounds);   // 第一格的第二行（说明、进程数、节能）跟着别的格子变，整行重画

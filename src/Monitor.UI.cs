@@ -152,9 +152,9 @@ namespace WatchDog
         static readonly string[] RangeKeys = { "30m", "1h", "3h", "12h", "24h", "7d" };
         static readonly Dictionary<string, double> RangeHours = new Dictionary<string, double> { { "30m", 0.5 }, { "1h", 1 }, { "3h", 3 }, { "12h", 12 }, { "24h", 24 }, { "7d", 168 } };
         static readonly Dictionary<string, string> RangeLabel = new Dictionary<string, string> { { "30m", "30 分钟" }, { "1h", "1 小时" }, { "3h", "3 小时" }, { "12h", "12 小时" }, { "24h", "24 小时" }, { "7d", "7 天" } };
-        const int ColCount = 8;   // 程序（两行 + 内存占用条）、标记（监控十字 / 节能叶子）、内存、CPU、读写、24 小时走势、稳定性、判断（两行）
-        static readonly int[] RightCols = { 2, 3, 4 };
-        static readonly Dictionary<string, int> SortCol = new Dictionary<string, int> { { "mem", 2 }, { "cpu", 3 }, { "io", 4 }, { "hnd", -1 }, { "gui", -1 }, { "issue", 6 } };
+        const int ColCount = 8;   // 程序（两行 + 内存占用条）、标记（监控十字 / 节能叶子）、稳定性、内存、CPU、读写、24 小时走势、稳定性、判断（两行）
+        static readonly int[] RightCols = { 3, 4, 5 };
+        static readonly Dictionary<string, int> SortCol = new Dictionary<string, int> { { "mem", 3 }, { "cpu", 4 }, { "io", 5 }, { "hnd", -1 }, { "gui", -1 }, { "issue", 2 } };
 
         void BuildUI()
         {
@@ -703,7 +703,7 @@ namespace WatchDog
                 {
                     if (syncing || e.ColumnIndex >= src.Columns.Count - 1) return;
                     syncing = true;
-                    try { if (dst.Columns[e.ColumnIndex].Width != src.Columns[e.ColumnIndex].Width) dst.Columns[e.ColumnIndex].Width = src.Columns[e.ColumnIndex].Width; FitColumns(); }
+                    try { if (dst.Columns[e.ColumnIndex].Width != src.Columns[e.ColumnIndex].Width) dst.Columns[e.ColumnIndex].Width = src.Columns[e.ColumnIndex].Width; FillLastColumn(dst); FillLastColumn(src); }
                     finally { syncing = false; }
                 };
             }
@@ -791,7 +791,7 @@ namespace WatchDog
             lv.Dock = DockStyle.Fill; lv.View = View.Details; lv.FullRowSelect = true; lv.HideSelection = false; lv.MultiSelect = false;
             lv.OwnerDraw = true; lv.BackColor = cRowA; lv.ForeColor = cText; lv.BorderStyle = BorderStyle.None;
             rowH = new ImageList(); rowH.ImageSize = new Size(1, RowH); lv.SmallImageList = rowH;
-            object[,] cols = { { "程序", 250 }, { "", 58 }, { "内存", 92 }, { "CPU", 70 }, { "读写", 96 }, { "24 小时 ▸", 128 }, { "稳定性", 96 }, { "判断", 200 } };
+            object[,] cols = { { "程序", 250 }, { "", 58 }, { "稳定性", 96 }, { "内存", 92 }, { "CPU", 70 }, { "读写", 96 }, { "24 小时 ▸", 128 }, { "判断", 200 } };
             for (int i = 0; i < cols.GetLength(0); i++) lv.Columns.Add((string)cols[i, 0], (int)cols[i, 1]);
             lv.DrawColumnHeader += delegate(object s, DrawListViewColumnHeaderEventArgs e)
             {
@@ -810,14 +810,14 @@ namespace WatchDog
             };
             lv.ColumnClick += delegate(object s, ColumnClickEventArgs e)
             {
-                if (e.Column == 5)
+                if (e.Column == 6)
                 {
                     // 走势列：3 → 12 → 24 小时轮流切换，两个列表一起
                     sparkHours = sparkHours == 24 ? 3 : sparkHours == 3 ? 12 : 24;
-                    foreach (BufferedListView l in new[] { this.lv, lvG }) { l.Columns[5].Text = sparkHours + " 小时 ▸"; l.Invalidate(); }
+                    foreach (BufferedListView l in new[] { this.lv, lvG }) { l.Columns[6].Text = sparkHours + " 小时 ▸"; l.Invalidate(); }
                     return;
                 }
-                sortMode = e.Column == 2 ? "mem" : e.Column == 3 ? "cpu" : e.Column == 4 ? "io" : "issue";
+                sortMode = e.Column == 3 ? "mem" : e.Column == 4 ? "cpu" : e.Column == 5 ? "io" : "issue";
                 RefreshAll();
                 // 列标题是单独的子窗口，Invalidate() 不会重画它，旧的排序标记会留着：两个列表的标题都手动整个重画
                 foreach (BufferedListView l in new[] { this.lv, lvG })
@@ -911,24 +911,24 @@ namespace WatchDog
                     for (int k = 0; k < marks.Count; k++) { marks[k](mx); mx += widths[k] + 6; }
                     return;
                 }
-                case 2:
+                case 3:
                 {
                     double mb = pr != null ? pr.PrivMB : 0;
                     Txt(g, string.Format("{0:N0} MB", mb), fCN, cText, r.X + 6, r.Y, r.Width - 14, r.Height, tfR);
                     return;
                 }
-                case 3:
                 case 4:
+                case 5:
                 {
-                    double v = pr == null ? 0 : e.ColumnIndex == 3 ? pr.CpuPct : pr.IoMBs;
-                    Color c = e.ColumnIndex == 4 && v >= HeavyIoMBs ? cYellow : v < 0.05 ? cGray : cText;
-                    Txt(g, e.ColumnIndex == 3 ? v.ToString("N1") + "%" : v.ToString("N1") + " MB/s", fCN, c, r.X + 6, r.Y, r.Width - 14, r.Height, tfR);
+                    double v = pr == null ? 0 : e.ColumnIndex == 4 ? pr.CpuPct : pr.IoMBs;
+                    Color c = e.ColumnIndex == 5 && v >= HeavyIoMBs ? cYellow : v < 0.05 ? cGray : cText;
+                    Txt(g, e.ColumnIndex == 4 ? v.ToString("N1") + "%" : v.ToString("N1") + " MB/s", fCN, c, r.X + 6, r.Y, r.Width - 14, r.Height, tfR);
                     return;
                 }
-                case 5:
+                case 6:
                     DrawSpark(g, name, rt, new Rectangle(r.X + 12, r.Y + 10, r.Width - 24, r.Height - 20));
                     return;
-                case 6:
+                case 2:
                 {
                     // 稳定性：彩色小标签（正常的用灰色描边，不抢眼）
                     if (rt == null) return;
@@ -994,13 +994,43 @@ namespace WatchDog
             g.FillRectangle(bLv[li], pts[n - 1].X - 2, pts[n - 1].Y - 2, 4, 4);
             g.SmoothingMode = SmoothingMode.None;
         }
-        void FitColumns() { FitColumns(lv); if (lvG != null) FitColumns(lvG); }
-        static void FitColumns(ListView lv)
+        // 列宽自适应（两个列表用同一套宽度，上下对得齐）
+        //   标记列：按两个列表里一行最多有几个标记（十字 / ◉ / 叶子）来定，没有标记时很窄
+        //   其他列：基准宽度按列表宽度等比缩放（不小于各自的最小宽度），剩下的给"程序"和"判断"
+        static readonly int[] ColBase = { 230, 0, 96, 92, 70, 96, 128, 190 }, ColMin = { 180, 0, 84, 80, 58, 84, 96, 150 };
+        string fitKey = "";
+        // 用户手动拖了某一列：最后一列（判断）补满剩下的宽度
+        static void FillLastColumn(ListView l)
         {
-            int n = lv.Columns.Count, sum = 0;
-            for (int i = 0; i < n - 1; i++) sum += lv.Columns[i].Width;
-            int want = Math.Max(100, lv.ClientSize.Width - sum - 2);
-            if (lv.Columns[n - 1].Width != want) lv.Columns[n - 1].Width = want;
+            int n = l.Columns.Count, sum = 0;
+            for (int i = 0; i < n - 1; i++) sum += l.Columns[i].Width;
+            int want = Math.Max(100, l.ClientSize.Width - sum - 2);
+            if (l.Columns[n - 1].Width != want) l.Columns[n - 1].Width = want;
+        }
+        void FitColumns()
+        {
+            if (lv == null || lv.Columns.Count < ColCount) return;
+            int marks = 0;
+            foreach (string n in rows.Keys)
+            {
+                int k = (guarded.ContainsKey(n) || watched.ContainsKey(n) ? 1 : 0) + (ecoNames.Contains(n) ? 1 : 0);
+                if (k > marks) marks = k;
+            }
+            int markW = marks == 0 ? 12 : 16 + marks * 18 + (marks - 1) * 6;
+            int avail = lv.ClientSize.Width - 2 - markW;
+            // 只在列表宽度或标记数变了时重算：每 5 秒刷新都重算的话，用户手动拖过的列宽会被马上改回去
+            string key = avail + "|" + markW;
+            if (key == fitKey) return;
+            fitKey = key;
+            int baseSum = ColBase.Sum();
+            double k0 = Math.Max(0.6, Math.Min(1.0, avail / (double)baseSum));   // 窄了就一起缩（不放大固定列，只放大程序和判断）
+            int[] w = new int[ColCount];
+            for (int c = 0; c < ColCount; c++) w[c] = c == 1 ? markW : Math.Max(ColMin[c], (int)(ColBase[c] * k0));
+            int extra = avail + markW - w.Sum();
+            if (extra > 0) { w[0] += extra * 2 / 5; w[7] += extra - extra * 2 / 5; }
+            else w[7] = Math.Max(ColMin[7], w[7] + extra);
+            foreach (ListView l in new ListView[] { lv, lvG })
+                if (l != null) for (int c = 0; c < ColCount; c++) if (l.Columns[c].Width != w[c]) l.Columns[c].Width = w[c];
         }
 
         // ---------- 走势图：内存 / CPU / 磁盘 / 看门猫 / 选中的程序 ----------
