@@ -20,7 +20,7 @@ using System.Windows.Forms;
 
 namespace WatchDog
 {
-    class PetPart { public string Id, File, Slot; public Rectangle R; public int Z; public PointF Pivot; public bool Visible; }
+    class PetPart { public string Id, File, Slot; public Rectangle R; public int Z; public PointF Pivot; public bool Visible; public Bitmap Native; }   // Native：补过边、按 R 裁好的原尺寸图
     class PetLayer { public string Id, Slot; public bool Default; public Bitmap B; public Rectangle Dst; public PointF Pivot; public int Z; }
     class PetAnimFrame { public string Slot, Frame; public double Sec; }
 
@@ -169,6 +169,9 @@ namespace WatchDog
                     if (pp.Id != null && pp.File != null && pp.R.Width > 0 && File.Exists(Path.Combine(PetDir, pp.File))) petParts.Add(pp);
                 }
                 petParts = petParts.OrderBy(x => x.Z).ToList();
+                int cw = (int)Json.Num(Json.Obj(d, "canvas"), "width"), ch = (int)Json.Num(Json.Obj(d, "canvas"), "height");
+                PreparePetSources(cw > 0 ? cw : 512, ch > 0 ? ch : 1024);
+                petParts = petParts.Where(x => x.Native != null).ToList();
                 petRig = (int)Json.Num(d, "version");   // 2 = 按新要求重做的素材（眼睛 / 嘴 / 挥手都是换帧）
                 LoadPetAnims(d);
                 List<PetPart> vis = petParts.Where(x => x.Visible).ToList();
@@ -177,6 +180,106 @@ namespace WatchDog
                 return true;
             }
             catch { return false; }
+        }
+
+        // ---------- 补边：消除部件交界处的缝和白边 ----------
+        // 素材是从一张完整立绘上切出来的：相邻两块在交界处都是半透明的边，缩小后叠在一起也不是完全不透明，桌面会从缝里透出来。
+        // 办法：每一层被"上面的层"盖住的地方，把边缘改成不透明，并往外多延伸几个像素（颜色取最近的像素）。
+        // 多出来的部分都藏在上面那层底下，正常看不出来，但交界处底下永远垫着实色。没被盖住的外轮廓不动。
+        internal static bool PetNoFill;   // 自测对比用：--petraw 关掉补边
+        const int PetFillPx = 4;          // 往下延伸几个像素（原图尺寸）
+        void PreparePetSources(int cw, int ch)
+        {
+            foreach (PetPart p in petParts) { if (p.Native != null) p.Native.Dispose(); p.Native = null; }
+            byte[] above = new byte[cw * ch];   // 已经处理过的、更上面的层合起来的不透明度
+            foreach (IGrouping<int, PetPart> grp in petParts.GroupBy(x => x.Z).OrderByDescending(g => g.Key))
+            {
+                List<KeyValuePair<PetPart, int[]>> done = new List<KeyValuePair<PetPart, int[]>>();
+                foreach (PetPart p in grp)
+                {
+                    int[] px = ReadArgb(Path.Combine(PetDir, p.File), cw, ch);
+                    if (px == null) continue;
+                    Rectangle r = Rectangle.Intersect(p.R, new Rectangle(0, 0, cw, ch));
+                    if (!PetNoFill) r = FillUnder(px, above, r, cw, ch);
+                    p.R = r;
+                    p.Native = Crop(px, r, cw);
+                    done.Add(new KeyValuePair<PetPart, int[]>(p, px));
+                }
+                // 同一组的换帧（比如几张眼睛）互相不算"上面"；只有平时显示的那张（或不分组的层）才算盖住下面的层
+                foreach (KeyValuePair<PetPart, int[]> kv in done)
+                {
+                    if (kv.Key.Slot != null && !kv.Key.Visible) continue;
+                    int[] px = kv.Value; Rectangle r = kv.Key.R;
+                    for (int y = r.Top; y < r.Bottom; y++)
+                        for (int x = r.Left, i = y * cw + r.Left; x < r.Right; x++, i++)
+                        {
+                            byte a = (byte)((uint)px[i] >> 24);
+                            if (a > above[i]) above[i] = a;
+                        }
+                }
+            }
+        }
+        // px：整张画布的像素（ARGB）；above：上面的层盖住了哪里。返回补边后这一层的范围
+        static Rectangle FillUnder(int[] px, byte[] above, Rectangle r, int cw, int ch)
+        {
+            // 1. 被盖住的半透明边缘 → 不透明
+            for (int y = r.Top; y < r.Bottom; y++)
+                for (int x = r.Left, i = y * cw + r.Left; x < r.Right; x++, i++)
+                {
+                    uint c = (uint)px[i]; uint a = c >> 24;
+                    if (a > 0 && a < 255 && above[i] >= 24) px[i] = (int)(c | 0xFF000000);
+                }
+            // 2. 往被盖住的地方延伸几圈，颜色取旁边的不透明像素
+            Rectangle grown = r;
+            for (int pass = 0; pass < PetFillPx; pass++)
+            {
+                Rectangle g = Rectangle.Intersect(Rectangle.Inflate(grown, 1, 1), new Rectangle(0, 0, cw, ch));
+                List<KeyValuePair<int, int>> add = new List<KeyValuePair<int, int>>();
+                for (int y = g.Top; y < g.Bottom; y++)
+                    for (int x = g.Left, i = y * cw + g.Left; x < g.Right; x++, i++)
+                    {
+                        if (((uint)px[i] >> 24) >= 128 || above[i] < 24) continue;
+                        int n = -1;
+                        if (x > 0 && ((uint)px[i - 1] >> 24) == 255) n = i - 1;
+                        else if (x < cw - 1 && ((uint)px[i + 1] >> 24) == 255) n = i + 1;
+                        else if (y > 0 && ((uint)px[i - cw] >> 24) == 255) n = i - cw;
+                        else if (y < ch - 1 && ((uint)px[i + cw] >> 24) == 255) n = i + cw;
+                        if (n >= 0) add.Add(new KeyValuePair<int, int>(i, px[n]));
+                    }
+                if (add.Count == 0) break;
+                foreach (KeyValuePair<int, int> kv in add)
+                {
+                    px[kv.Key] = (int)((uint)kv.Value | 0xFF000000);
+                    int x = kv.Key % cw, y = kv.Key / cw;
+                    grown = Rectangle.Union(grown, new Rectangle(x, y, 1, 1));
+                }
+            }
+            return grown;
+        }
+        static int[] ReadArgb(string file, int cw, int ch)
+        {
+            try
+            {
+                using (Bitmap src = new Bitmap(file))
+                using (Bitmap b = new Bitmap(cw, ch, PixelFormat.Format32bppArgb))
+                {
+                    using (Graphics g = Graphics.FromImage(b)) { g.CompositingMode = CompositingMode.SourceCopy; g.DrawImage(src, new Rectangle(0, 0, cw, ch), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel); }
+                    BitmapData bd = b.LockBits(new Rectangle(0, 0, cw, ch), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                    int[] px = new int[cw * ch];
+                    for (int y = 0; y < ch; y++) Marshal.Copy(bd.Scan0 + y * bd.Stride, px, y * cw, cw);
+                    b.UnlockBits(bd);
+                    return px;
+                }
+            }
+            catch { return null; }
+        }
+        static Bitmap Crop(int[] px, Rectangle r, int cw)
+        {
+            Bitmap b = new Bitmap(Math.Max(1, r.Width), Math.Max(1, r.Height), PixelFormat.Format32bppArgb);
+            BitmapData bd = b.LockBits(new Rectangle(0, 0, b.Width, b.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+            for (int y = 0; y < r.Height; y++) Marshal.Copy(px, (r.Top + y) * cw + r.Left, bd.Scan0 + y * bd.Stride, r.Width);
+            b.UnlockBits(bd);
+            return b;
         }
 
         // "animations": { "blink": [ { "frame": "eyes-half", "ms": 50 }, ... ], "wave": [...], "talk": [...] }
@@ -234,7 +337,7 @@ namespace WatchDog
             {
                 try
                 {
-                    using (Bitmap src = new Bitmap(Path.Combine(PetDir, p.File)))
+                    Bitmap src = p.Native;
                     {
                         PointF o = PetPt(p.R.X, p.R.Y, k);
                         Rectangle dst = new Rectangle((int)Math.Floor(o.X), (int)Math.Floor(o.Y), (int)Math.Ceiling(p.R.Width * k) + 1, (int)Math.Ceiling(p.R.Height * k) + 1);
@@ -243,7 +346,7 @@ namespace WatchDog
                         {
                             g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                             // 部件在画布上的位置 → 小图里的位置（保留取整前的小数，部件之间对得齐）
-                            g.DrawImage(src, new RectangleF(o.X - dst.X, o.Y - dst.Y, p.R.Width * k, p.R.Height * k), p.R, GraphicsUnit.Pixel);
+                            g.DrawImage(src, new RectangleF(o.X - dst.X, o.Y - dst.Y, p.R.Width * k, p.R.Height * k), new Rectangle(0, 0, p.R.Width, p.R.Height), GraphicsUnit.Pixel);
                         }
                         petLayers.Add(new PetLayer { Id = p.Id, Slot = p.Slot, Default = p.Visible, B = b, Dst = dst, Pivot = PetPt(p.Pivot.X, p.Pivot.Y, k), Z = p.Z });
                     }
@@ -549,6 +652,7 @@ namespace WatchDog
             if (petTimer != null) { petTimer.Stop(); petTimer.Dispose(); }
             foreach (PetLayer l in petLayers) l.B.Dispose();
             petLayers.Clear();
+            if (petParts != null) foreach (PetPart p in petParts) if (p.Native != null) p.Native.Dispose();
             if (petMenu != null) petMenu.Dispose();
             if (bubble != null) bubble.Dispose();
             if (pet != null) pet.Dispose();
@@ -575,6 +679,32 @@ namespace WatchDog
                 }
                 sheet.Save(file, ImageFormat.Png);
             }
+            // 白色背景（最容易看出缝）：叠出来的默认姿势 vs 全身图整体缩小，数一下"明显比原图亮"的像素
+            try
+            {
+                float k = PetScale(h);
+                using (Bitmap a = new Bitmap(sz.Width, sz.Height, PixelFormat.Format32bppArgb))
+                using (Bitmap r = new Bitmap(sz.Width, sz.Height, PixelFormat.Format32bppArgb))
+                using (Bitmap full = new Bitmap(Path.Combine(PetDir, "mascot-full-1024.png")))
+                {
+                    using (Graphics g = Graphics.FromImage(a)) { g.Clear(Color.White); DrawPet(g, new PetPose()); }
+                    using (Graphics g = Graphics.FromImage(r))
+                    {
+                        g.Clear(Color.White); g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        PointF o = PetPt(0, 0, k);
+                        g.DrawImage(full, new RectangleF(o.X, o.Y, full.Width * k, full.Height * k));
+                    }
+                    int seams = 0;
+                    for (int y = 0; y < sz.Height; y++) for (int x = 0; x < sz.Width; x++)
+                        {
+                            Color ca = a.GetPixel(x, y), cr = r.GetPixel(x, y);
+                            if (ca.R + ca.G + ca.B - cr.R - cr.G - cr.B > 120) seams++;
+                        }
+                    File.WriteAllText(Path.ChangeExtension(file, null) + "-seams.txt", "白底上比原图明显发亮的像素：" + seams + "\r\n", System.Text.Encoding.UTF8);
+                    a.Save(Path.ChangeExtension(file, null) + "-white.png", ImageFormat.Png);
+                }
+            }
+            catch { }
             // 气泡单独存一张
             bubble = new LayeredWindow("snap");
             bubbleText = "注意！vivaldi（Vivaldi 浏览器）疑似内存泄漏。近 2 小时涨了 1.2 GB，关掉不用的标签页试试。"; bubbleLevel = 2; petAt = Point.Empty; petH = h;
