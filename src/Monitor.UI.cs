@@ -149,7 +149,7 @@ namespace WatchDog
         static readonly string[] RangeKeys = { "30m", "1h", "3h", "12h", "24h", "7d" };
         static readonly Dictionary<string, double> RangeHours = new Dictionary<string, double> { { "30m", 0.5 }, { "1h", 1 }, { "3h", 3 }, { "12h", 12 }, { "24h", 24 }, { "7d", 168 } };
         static readonly Dictionary<string, string> RangeLabel = new Dictionary<string, string> { { "30m", "30 分钟" }, { "1h", "1 小时" }, { "3h", "3 小时" }, { "12h", "12 小时" }, { "24h", "24 小时" }, { "7d", "7 天" } };
-        const int ColCount = 8;   // 标记、程序（两行 + 内存占用条）、内存、CPU、读写、24 小时走势、稳定性、判断（两行）
+        const int ColCount = 8;   // 程序（两行 + 内存占用条）、标记（监控十字 / 节能叶子）、内存、CPU、读写、24 小时走势、稳定性、判断（两行）
         static readonly int[] RightCols = { 2, 3, 4 };
         static readonly Dictionary<string, int> SortCol = new Dictionary<string, int> { { "mem", 2 }, { "cpu", 3 }, { "io", 4 }, { "hnd", -1 }, { "gui", -1 }, { "issue", 6 } };
 
@@ -760,7 +760,7 @@ namespace WatchDog
             lv.Dock = DockStyle.Fill; lv.View = View.Details; lv.FullRowSelect = true; lv.HideSelection = false; lv.MultiSelect = false;
             lv.OwnerDraw = true; lv.BackColor = cRowA; lv.ForeColor = cText; lv.BorderStyle = BorderStyle.None;
             rowH = new ImageList(); rowH.ImageSize = new Size(1, RowH); lv.SmallImageList = rowH;
-            object[,] cols = { { "", 34 }, { "程序", 250 }, { "内存", 92 }, { "CPU", 70 }, { "读写", 96 }, { "24 小时", 128 }, { "稳定性", 96 }, { "判断", 200 } };
+            object[,] cols = { { "程序", 250 }, { "", 58 }, { "内存", 92 }, { "CPU", 70 }, { "读写", 96 }, { "24 小时", 128 }, { "稳定性", 96 }, { "判断", 200 } };
             for (int i = 0; i < cols.GetLength(0); i++) lv.Columns.Add((string)cols[i, 0], (int)cols[i, 1]);
             lv.DrawColumnHeader += delegate(object s, DrawListViewColumnHeaderEventArgs e)
             {
@@ -833,38 +833,39 @@ namespace WatchDog
             {
                 case 0:
                 {
-                    // 标记：重点监控的像素十字 / 用户加的监控 ◉，居中；选中时左边一道竖条
                     if (it.Selected) g.FillRectangle(bLv[0], r.X, r.Y + 4, 3, r.Height - 8);
-                    Rule gr;
-                    if (guarded.TryGetValue(name, out gr))
-                    {
-                        int gl = GuardLevel(name, gr);
-                        if (!it.Selected) g.FillRectangle(bLv[Lx(gl)], r.X, r.Y + 6, 2, r.Height - 12);
-                        g.DrawImage(Shield(gl, 18), r.X + (r.Width - 18) / 2, r.Y + (r.Height - 18) / 2);
-                    }
-                    else if (watched.ContainsKey(name)) Txt(g, "◉", fCN, cCyan, r.X, r.Y, r.Width, r.Height, tfC);
-                    return;
-                }
-                case 1:
-                {
+                    Rule gr0;
+                    if (!it.Selected && guarded.TryGetValue(name, out gr0)) g.FillRectangle(bLv[Lx(GuardLevel(name, gr0))], r.X, r.Y + 6, 2, r.Height - 12);   // 重点监控：左边一道状态色细线
                     Bitmap icon = GetIcon(name);
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    if (icon != null) g.DrawImage(icon, r.X + 4, r.Y + 8, 24, 24); else g.FillRectangle(bDim, r.X + 7, r.Y + 11, 18, 18);
-                    int tx = r.X + 38, tw = r.Right - tx - 8;
+                    if (icon != null) g.DrawImage(icon, r.X + 10, r.Y + 8, 24, 24); else g.FillRectangle(bDim, r.X + 13, r.Y + 11, 18, 18);
+                    int tx = r.X + 44, tw = r.Right - tx - 8;
                     Txt(g, name, fCNb, cText, tx, y1, tw, lh);
-                    // 第二行：说明 · 进程数 · 节能 · 句柄 / 图形资源问题
+                    // 第二行：说明 · 进程数 · 句柄 / 图形资源问题
                     string sub = DescOf(name) ?? "";
                     if (pr != null && pr.Count > 1) sub += (sub.Length > 0 ? " · " : "") + pr.Count + " 个进程";
-                    if (ecoNames.Contains(name)) sub += " · 节能中";
                     int rl = ResLevel(name);
                     Txt(g, sub, fCN, HasNote(name) ? cText : cGray, tx, y2, tw - (rl >= 1 ? 90 : 0), lh);
                     if (rl >= 1 && pr != null) Txt(g, pr.Gdi + pr.User > 800 && pr.Handles < 20000 ? "GDI " + (pr.Gdi + pr.User) : "句柄 " + pr.Handles.ToString("N0"), fCN, LevelColor(rl), r.Right - 96, y2, 88, lh, tfR);
                     // 内存占用条：程序名这一栏的最下面，从左往右，长度 = 占列表里最大那个程序的比例
+                    // 颜色：健康（稳定、没有预警）= 正常色（绿），需要留意 = 黄，出问题 = 红
                     double mb = pr != null ? pr.PrivMB : 0;
                     int bw = r.Right - tx - 10, by = r.Bottom - 6;
-                    g.FillRectangle(bDim, tx, by, bw, 3);
+                    using (SolidBrush track = new SolidBrush(Color.FromArgb(34, cText))) g.FillRectangle(track, tx, by, bw, 3);   // 底槽用中性的浅灰，不和红色的"出问题"混
                     int fw = (int)Math.Round(bw * Math.Min(1, mb / listMaxMB));
-                    if (fw > 0) g.FillRectangle(rt != null && rt.Level >= 1 ? bLv[Lx(rt.Level)] : bAcc, tx, by, fw, 3);
+                    if (fw > 0) g.FillRectangle(bLv[Lx(Math.Max(0, Math.Max(rt != null ? rt.Level : 0, rl)))], tx, by, fw, 3);
+                    return;
+                }
+                case 1:
+                {
+                    // 标记：重点监控的像素十字 / 用户加的监控 ◉ / 节能模式的小叶子，排成一排居中
+                    List<Action<int>> marks = new List<Action<int>>(); List<int> widths = new List<int>();
+                    Rule gr;
+                    if (guarded.TryGetValue(name, out gr)) { int gl = GuardLevel(name, gr); marks.Add(x => g.DrawImage(Shield(gl, 18), x, r.Y + (r.Height - 18) / 2)); widths.Add(18); }
+                    else if (watched.ContainsKey(name)) { marks.Add(x => Txt(g, "◉", fCN, cCyan, x, r.Y, 16, r.Height, tfC)); widths.Add(16); }
+                    if (ecoNames.Contains(name)) { marks.Add(x => Txt(g, "\uE8BE", fMenuIcon, cCyan, x, r.Y, 18, r.Height, tfC)); widths.Add(18); }
+                    int total = widths.Sum() + Math.Max(0, widths.Count - 1) * 6, mx = r.X + (r.Width - total) / 2;
+                    for (int k = 0; k < marks.Count; k++) { marks[k](mx); mx += widths[k] + 6; }
                     return;
                 }
                 case 2:

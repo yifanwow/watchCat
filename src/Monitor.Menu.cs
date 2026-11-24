@@ -11,7 +11,7 @@ using System.Windows.Forms;
 
 namespace WatchDog
 {
-    class MenuMeta { public string Glyph; public Func<Color> Color; public bool Header; }
+    class MenuMeta { public string Glyph, Hint; public Func<Color> Color; public bool Header; }
 
     partial class Monitor
     {
@@ -31,7 +31,7 @@ namespace WatchDog
             menuTitle = new ToolStripLabel(""); menuTitle.Font = fCNbig; menuTitle.Margin = new Padding(6, 8, 8, 0);
             menuTitle.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText; menuTitle.TextImageRelation = TextImageRelation.ImageBeforeText;
             menuTitle.ImageScaling = ToolStripItemImageScaling.SizeToFit; menuTitle.ImageAlign = ContentAlignment.MiddleLeft;
-            menuSub = new ToolStripLabel(""); menuSub.Font = fCN; menuSub.ForeColor = cGray; menuSub.Margin = new Padding(36, 0, 8, 4);   // 和程序名对齐（图标后面）
+            menuSub = new ToolStripLabel(""); menuSub.Font = fCN; menuSub.ForeColor = cGray; menuSub.Margin = new Padding(0, 0, 0, 4); menuSub.Padding = new Padding(36, 0, 12, 0); menuSub.TextAlign = ContentAlignment.MiddleLeft;   // 用内边距缩进（外边距不算进菜单宽度，长了会被截掉）   // 和程序名对齐（图标后面）
             menu.Items.Add(menuTitle); menu.Items.Add(menuSub);
 
             ToolStripItem hFix = Header("处理");
@@ -79,7 +79,7 @@ namespace WatchDog
                 menuEco.Visible = EcoAllowed(n);
                 bool eco = ecoNames.Contains(n);
                 menuEco.Text = eco ? "退出节能模式" : "节能模式";
-                menuEco.ShortcutKeyDisplayString = eco ? "恢复正常优先级" : "低优先级 · 不影响使用";
+                SetHint(menuEco, eco ? "恢复正常优先级" : "低优先级 · 不影响使用");
                 menuEnd.Visible = !prot;
                 menuNote.Text = HasNote(n) ? "改备注…" : "写备注…";
                 menuIncident.Visible = incidents.ContainsKey(n);
@@ -103,9 +103,16 @@ namespace WatchDog
             ToolStripMenuItem i = new ToolStripMenuItem(text);
             i.ForeColor = cText; i.Click += onClick; i.Padding = new Padding(0, 3, 0, 3);
             i.Tag = new MenuMeta { Glyph = glyph, Color = color };
-            if (hint != null) { i.ShortcutKeyDisplayString = hint; i.ShowShortcutKeys = true; }
+            SetHint(i, hint);
             menu.Items.Add(i);
             return i;
+        }
+        // 右边的灰色说明：不用系统的"快捷键"位置（它后面还留着子菜单箭头的空白），而是加在右边的内边距里，自己画、贴着右边
+        void SetHint(ToolStripMenuItem i, string hint)
+        {
+            MenuMeta m = (MenuMeta)i.Tag; m.Hint = hint;
+            int w = string.IsNullOrEmpty(hint) ? 0 : TextRenderer.MeasureText(hint, fCN).Width + 28;
+            i.Padding = new Padding(0, 3, w, 3);
         }
         ToolStripItem Header(string text)
         {
@@ -132,17 +139,15 @@ namespace WatchDog
             protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
             {
                 MenuMeta meta = e.Item.Tag as MenuMeta;
-                ToolStripMenuItem mi = e.Item as ToolStripMenuItem;
-                if (mi != null && e.Text == mi.ShortcutKeyDisplayString && !string.IsNullOrEmpty(e.Text))
-                {
-                    e.TextColor = Theme.Gray;   // 右边的补充说明
-                }
-                else if (meta != null && !meta.Header && m.fMenuIcon != null)
+                if (meta != null && !meta.Header && m.fMenuIcon != null)
                 {
                     // 左边图标：画在图片留白的中间
                     Rectangle ir = new Rectangle(4, 0, 26, e.Item.Height);
                     TextRenderer.DrawText(e.Graphics, meta.Glyph, m.fMenuIcon, ir, meta.Color(), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
                     e.TextColor = e.Item.Enabled ? Theme.Text : Theme.Disabled;
+                    if (!string.IsNullOrEmpty(meta.Hint))   // 右边说明：贴着菜单右边
+                        TextRenderer.DrawText(e.Graphics, meta.Hint, m.fCN, new Rectangle(0, 0, e.ToolStrip.Width - 14, e.Item.Height), Theme.Gray,
+                            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
                 }
                 base.OnRenderItemText(e);
             }
@@ -160,6 +165,7 @@ namespace WatchDog
         static readonly HashSet<string> EcoNever = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
             "explorer", "ShellExperienceHost", "StartMenuExperienceHost", "SearchHost", "SearchApp", "TextInputHost", "ctfmon", "conhost",
             "RuntimeBroker", "ApplicationFrameHost", "dllhost", "taskhostw", "audiodg", "dwm", "claude", "Claude", "WatchDog", "WatchCat" };
+        internal void EcoMarkForSnapshot(string n) { ecoNames.Add(n); }   // 自测截图：只在界面上标成节能，不改真实优先级
         bool EcoAllowed(string n) { return n != null && !n.StartsWith("svc:") && !Protected.Contains(n) && !EcoNever.Contains(n); }
 
         void ToggleEco(string n)
