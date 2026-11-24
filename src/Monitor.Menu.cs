@@ -25,13 +25,13 @@ namespace WatchDog
             fMenuIcon = IconFont(11f);
             menu = new ContextMenuStrip();
             menu.Renderer = new CyberMenuRenderer(this);
-            menu.Font = fCN; menu.ForeColor = cText; menu.ShowImageMargin = true; menu.ImageScalingSize = new Size(22, 22);
+            menu.Font = fCN; menu.ForeColor = cText; menu.ShowImageMargin = false; menu.ImageScalingSize = new Size(22, 22);   // 不用系统的图片留白（它会让顶部的标题也缩进去一大截），图标自己画
 
             // 顶部：程序图标 + 程序名
-            menuTitle = new ToolStripLabel(""); menuTitle.Font = fCNbig; menuTitle.Margin = new Padding(6, 8, 8, 0);
+            menuTitle = new ToolStripLabel(""); menuTitle.Font = fCNbig; menuTitle.Margin = new Padding(4, 8, 8, 0);
             menuTitle.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText; menuTitle.TextImageRelation = TextImageRelation.ImageBeforeText;
             menuTitle.ImageScaling = ToolStripItemImageScaling.SizeToFit; menuTitle.ImageAlign = ContentAlignment.MiddleLeft;
-            menuSub = new ToolStripLabel(""); menuSub.Font = fCN; menuSub.ForeColor = cGray; menuSub.Margin = new Padding(0, 0, 0, 4); menuSub.Padding = new Padding(36, 0, 12, 0); menuSub.TextAlign = ContentAlignment.MiddleLeft;   // 用内边距缩进（外边距不算进菜单宽度，长了会被截掉）   // 和程序名对齐（图标后面）
+            menuSub = new ToolStripLabel(""); menuSub.Font = fCN; menuSub.ForeColor = cGray; menuSub.Margin = new Padding(0, 0, 0, 4); menuSub.Padding = new Padding(32, 0, 12, 0); menuSub.TextAlign = ContentAlignment.MiddleLeft;   // 用内边距缩进（外边距不算进菜单宽度，长了会被截掉）   // 和程序名对齐（图标后面）
             menu.Items.Add(menuTitle); menu.Items.Add(menuSub);
 
             ToolStripItem hFix = Header("处理");
@@ -112,12 +112,12 @@ namespace WatchDog
         {
             MenuMeta m = (MenuMeta)i.Tag; m.Hint = hint;
             int w = string.IsNullOrEmpty(hint) ? 0 : TextRenderer.MeasureText(hint, fCN).Width + 28;
-            i.Padding = new Padding(0, 3, w, 3);
+            i.Padding = new Padding(26, 3, w, 3);   // 左边 26 像素给图标
         }
         ToolStripItem Header(string text)
         {
             ToolStripLabel l = new ToolStripLabel("// " + text);
-            l.Font = fCNb; l.ForeColor = cAccent; l.Margin = new Padding(6, 8, 6, 2);   // 中文用雅黑（Bahnschrift 没有中文，会被替换成别的字体）
+            l.Font = fCNb; l.ForeColor = cAccent; l.Margin = new Padding(4, 8, 6, 2);   // 中文用雅黑（Bahnschrift 没有中文，会被替换成别的字体）
             l.Tag = new MenuMeta { Header = true };
             menu.Items.Add(l);
             return l;
@@ -142,12 +142,15 @@ namespace WatchDog
                 if (meta != null && !meta.Header && m.fMenuIcon != null)
                 {
                     // 左边图标：画在图片留白的中间
-                    Rectangle ir = new Rectangle(4, 0, 26, e.Item.Height);
+                    Rectangle ir = new Rectangle(6, 0, 24, e.Item.Height);
                     TextRenderer.DrawText(e.Graphics, meta.Glyph, m.fMenuIcon, ir, meta.Color(), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-                    e.TextColor = e.Item.Enabled ? Theme.Text : Theme.Disabled;
+                    // 文字自己画在图标后面（菜单没有图片留白时，系统不会按左边距把文字往右推）
+                    TextRenderer.DrawText(e.Graphics, e.Text, e.TextFont, new Rectangle(34, 0, e.Item.Width - 34, e.Item.Height), e.Item.Enabled ? Theme.Text : Theme.Disabled,
+                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
                     if (!string.IsNullOrEmpty(meta.Hint))   // 右边说明：贴着菜单右边
                         TextRenderer.DrawText(e.Graphics, meta.Hint, m.fCN, new Rectangle(0, 0, e.ToolStrip.Width - 14, e.Item.Height), Theme.Gray,
                             TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                    return;
                 }
                 base.OnRenderItemText(e);
             }

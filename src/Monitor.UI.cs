@@ -122,7 +122,10 @@ namespace WatchDog
         CardData dog = new CardData { Tag = "WATCHCAT", Title = "看门猫", Mode = "dog" };   // 画在体检结论的上半部分
         const int DogY = 34, DogH = 88;
         BufferedListView lv, lvG;      // lvG：上面的"重点监控"小列表（看门猫专项修复在管的程序）
-        Panel watchBox; BufferedPanel watchHead; int watchHdrH = 26, watchRowH = 28;
+        Panel watchBox; BufferedPanel watchHead, watchSplit; int watchHdrH = 26, watchRowH = 28;
+        int watchPref = -1, watchShown;   // 用户拖出来的行数（-1 = 还没读设置）；现在实际显示几行
+        bool splitDrag, splitHot; int splitY, splitRows;
+        int WatchRowsShown() { return watchShown; }
         Dictionary<int, Bitmap> shieldBmp = new Dictionary<int, Bitmap>();
         ImageList rowH;
         ContextMenuStrip menu, trayMenu;
@@ -665,8 +668,32 @@ namespace WatchDog
             lv = NewProcList();
             lvG = NewProcList();
             watchHead = new BufferedPanel(); watchHead.Dock = DockStyle.Top; watchHead.Height = 32; watchHead.Paint += PaintWatchHead;
-            watchBox = new Panel(); watchBox.Dock = DockStyle.Top; watchBox.Height = 0; watchBox.Visible = false; watchBox.BackColor = cBg; watchBox.Padding = new Padding(0, 0, 0, 10);
-            watchBox.Controls.Add(lvG); watchBox.Controls.Add(watchHead); lvG.BringToFront();
+            watchBox = new Panel(); watchBox.Dock = DockStyle.Top; watchBox.Height = 0; watchBox.Visible = false; watchBox.BackColor = cBg;
+            // 分割线：按住上下拖，改变重点监控显示几行（至少 3 行，下面的列表也至少留 3 行），记在 settings.json 的 watchRows
+            watchSplit = new BufferedPanel(); watchSplit.Dock = DockStyle.Bottom; watchSplit.Height = 12; watchSplit.Cursor = Cursors.SizeNS;
+            watchSplit.Paint += (sp, pe) =>
+            {
+                Graphics g = pe.Graphics; int w = watchSplit.Width, h = watchSplit.Height;
+                g.FillRectangle(bBg, 0, 0, w, h);
+                g.FillRectangle(splitHot ? bAcc : bDimLine, 0, h / 2, w, 1);
+                for (int k = -2; k <= 2; k++) g.FillRectangle(splitHot ? bAcc : bDimLine, w / 2 + k * 6 - 1, h / 2 - 3, 2, 2);   // 中间一排小点 = 可以拖
+            };
+            watchSplit.MouseEnter += delegate { splitHot = true; watchSplit.Invalidate(); };
+            watchSplit.MouseLeave += delegate { if (!splitDrag) { splitHot = false; watchSplit.Invalidate(); } };
+            watchSplit.MouseDown += (sp, me) => { if (me.Button == MouseButtons.Left) { splitDrag = true; splitY = Cursor.Position.Y; splitRows = WatchRowsShown(); } };
+            watchSplit.MouseMove += delegate
+            {
+                if (!splitDrag) return;
+                int rowsNow = splitRows + (int)Math.Round((Cursor.Position.Y - splitY) / (double)Math.Max(1, watchRowH));
+                if (rowsNow != watchPref) { watchPref = rowsNow; LayoutWatchBox(lvG.Items.Count); }
+            };
+            watchSplit.MouseUp += delegate
+            {
+                if (!splitDrag) return;
+                splitDrag = false; splitHot = false; watchSplit.Invalidate();
+                watchPref = WatchRowsShown(); WriteSetting("watchRows", watchPref);
+            };
+            watchBox.Controls.Add(lvG); watchBox.Controls.Add(watchHead); watchBox.Controls.Add(watchSplit); lvG.BringToFront();
             // 两个列表的列宽保持一致（拖动其中一个的列宽，另一个跟着变）
             bool syncing = false;
             foreach (BufferedListView a in new[] { lv, lvG })
@@ -692,10 +719,14 @@ namespace WatchDog
             }
             catch { }
             bool vis = n > 0;
-            // 最多占列表区域的四成左右（行变高了，8 行会把下面的主列表挤得只剩几行），放不下的可以在小列表里滚动
+            // 显示几行：用户拖出来的（默认 4）；至少 3 行，下面的列表也至少留 3 行；超过的在小列表里滚动
+            if (watchPref < 0) { double wr = Json.Num(ReadSettings(), "watchRows"); watchPref = wr >= 3 ? (int)wr : 4; }
             int room = (watchBox.Visible ? watchBox.Height : 0) + lv.Height;
-            int maxRows = room > 200 ? Math.Max(3, Math.Min(8, (int)(room * 0.42 - watchHead.Height - watchHdrH) / Math.Max(1, watchRowH))) : 4;
-            int want = vis ? watchHead.Height + watchHdrH + Math.Min(n, maxRows) * watchRowH + 2 + watchBox.Padding.Bottom : 0;
+            int fixedH = watchHead.Height + watchHdrH + 2 + watchSplit.Height;
+            int maxRows = room > 200 ? Math.Max(3, (room - fixedH - watchHdrH - 3 * watchRowH) / Math.Max(1, watchRowH)) : 8;
+            watchPref = Math.Max(3, Math.Min(watchPref, maxRows));
+            watchShown = Math.Min(n, watchPref);
+            int want = vis ? fixedH + watchShown * watchRowH : 0;
             if (watchBox.Visible != vis) watchBox.Visible = vis;
             if (watchBox.Height != want) watchBox.Height = want;
             watchHead.Invalidate();
@@ -760,7 +791,7 @@ namespace WatchDog
             lv.Dock = DockStyle.Fill; lv.View = View.Details; lv.FullRowSelect = true; lv.HideSelection = false; lv.MultiSelect = false;
             lv.OwnerDraw = true; lv.BackColor = cRowA; lv.ForeColor = cText; lv.BorderStyle = BorderStyle.None;
             rowH = new ImageList(); rowH.ImageSize = new Size(1, RowH); lv.SmallImageList = rowH;
-            object[,] cols = { { "程序", 250 }, { "", 58 }, { "内存", 92 }, { "CPU", 70 }, { "读写", 96 }, { "24 小时", 128 }, { "稳定性", 96 }, { "判断", 200 } };
+            object[,] cols = { { "程序", 250 }, { "", 58 }, { "内存", 92 }, { "CPU", 70 }, { "读写", 96 }, { "24 小时 ▸", 128 }, { "稳定性", 96 }, { "判断", 200 } };
             for (int i = 0; i < cols.GetLength(0); i++) lv.Columns.Add((string)cols[i, 0], (int)cols[i, 1]);
             lv.DrawColumnHeader += delegate(object s, DrawListViewColumnHeaderEventArgs e)
             {
@@ -779,6 +810,13 @@ namespace WatchDog
             };
             lv.ColumnClick += delegate(object s, ColumnClickEventArgs e)
             {
+                if (e.Column == 5)
+                {
+                    // 走势列：3 → 12 → 24 小时轮流切换，两个列表一起
+                    sparkHours = sparkHours == 24 ? 3 : sparkHours == 3 ? 12 : 24;
+                    foreach (BufferedListView l in new[] { this.lv, lvG }) { l.Columns[5].Text = sparkHours + " 小时 ▸"; l.Invalidate(); }
+                    return;
+                }
                 sortMode = e.Column == 2 ? "mem" : e.Column == 3 ? "cpu" : e.Column == 4 ? "io" : "issue";
                 RefreshAll();
                 // 列标题是单独的子窗口，Invalidate() 不会重画它，旧的排序标记会留着：两个列表的标题都手动整个重画
@@ -836,11 +874,16 @@ namespace WatchDog
                     if (it.Selected) g.FillRectangle(bLv[0], r.X, r.Y + 4, 3, r.Height - 8);
                     Rule gr0;
                     if (!it.Selected && guarded.TryGetValue(name, out gr0)) g.FillRectangle(bLv[Lx(GuardLevel(name, gr0))], r.X, r.Y + 6, 2, r.Height - 12);   // 重点监控：左边一道状态色细线
+                    // 内存占得多的程序图标和名字大一点（最大 1.2 倍），几十 MB 的小程序小一点（最小 0.8 倍）
+                    double scale = RowScale(pr != null ? pr.PrivMB : 0);
+                    int isz = (int)Math.Round(24 * scale);
                     Bitmap icon = GetIcon(name);
                     g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    if (icon != null) g.DrawImage(icon, r.X + 10, r.Y + 8, 24, 24); else g.FillRectangle(bDim, r.X + 13, r.Y + 11, 18, 18);
+                    int iy = r.Y + (r.Height - 6 - isz) / 2;
+                    if (icon != null) g.DrawImage(icon, r.X + 10 + (29 - isz) / 2, iy, isz, isz); else g.FillRectangle(bDim, r.X + 13, r.Y + 11, 18, 18);
                     int tx = r.X + 44, tw = r.Right - tx - 8;
-                    Txt(g, name, fCNb, cText, tx, y1, tw, lh);
+                    Font nf = NameFont(scale);
+                    Txt(g, name, nf, scale < 0.9 ? cGray : cText, tx, y1 - (scale > 1.05 ? 2 : 0), tw, lh + (scale > 1.05 ? 3 : 0));
                     // 第二行：说明 · 进程数 · 句柄 / 图形资源问题
                     string sub = DescOf(name) ?? "";
                     if (pr != null && pr.Count > 1) sub += (sub.Length > 0 ? " · " : "") + pr.Count + " 个进程";
@@ -864,7 +907,7 @@ namespace WatchDog
                     if (guarded.TryGetValue(name, out gr)) { int gl = GuardLevel(name, gr); marks.Add(x => g.DrawImage(Shield(gl, 18), x, r.Y + (r.Height - 18) / 2)); widths.Add(18); }
                     else if (watched.ContainsKey(name)) { marks.Add(x => Txt(g, "◉", fCN, cCyan, x, r.Y, 16, r.Height, tfC)); widths.Add(16); }
                     if (ecoNames.Contains(name)) { marks.Add(x => Txt(g, "\uE8BE", fMenuIcon, cCyan, x, r.Y, 18, r.Height, tfC)); widths.Add(18); }
-                    int total = widths.Sum() + Math.Max(0, widths.Count - 1) * 6, mx = r.X + (r.Width - total) / 2;
+                    int mx = r.X + 8;   // 从左边排起：只有一个时也在同一个位置，两个时不会挤到中间
                     for (int k = 0; k < marks.Count; k++) { marks[k](mx); mx += widths[k] + 6; }
                     return;
                 }
@@ -910,13 +953,31 @@ namespace WatchDog
                 }
             }
         }
+        // 每行内容的缩放：50 MB 以下 0.8 倍，4 GB 以上 1.2 倍，中间按对数平滑过渡
+        static double RowScale(double mb)
+        {
+            double t = (Math.Log(Math.Max(mb, 1)) - Math.Log(50)) / (Math.Log(4096) - Math.Log(50));
+            return 0.8 + 0.4 * Math.Max(0, Math.Min(1, t));
+        }
+        // 名字的字体：只分 5 档，建好缓存起来（每次画都新建字体会漏 GDI 对象）
+        Font[] nameFonts = new Font[5];
+        Font NameFont(double scale)
+        {
+            int k = (int)Math.Round((scale - 0.8) / 0.1);
+            k = Math.Max(0, Math.Min(4, k));
+            float[] pt = { 8f, 8.5f, 9f, 9.75f, 10.5f };   // 文字缩放比图标温和一些：太小的雅黑粗体看不清
+            if (nameFonts[k] == null) nameFonts[k] = Keep(new Font("Microsoft YaHei UI", pt[k], FontStyle.Bold));
+            return nameFonts[k];
+        }
+        int sparkHours = 24;   // 走势小图看多久：点列标题在 3 / 12 / 24 小时之间切换
         // 24 小时走势小图：看门猫每 10 分钟记一个点；还没有长期记录的用窗口打开后的实时数据
         void DrawSpark(Graphics g, string name, Rating rt, Rectangle box)
         {
             List<double> v = new List<double>();
             List<HistPt> h;
-            if (hist.TryGetValue(name, out h) && h.Count >= 3) { DateTime from = DateTime.Now.AddHours(-24); foreach (HistPt p in h) if (p.T >= from) v.Add(p.MB); }
-            else { Ring ring; if (series.TryGetValue(name, out ring)) for (int i = 0; i < ring.Count; i++) v.Add(ring.ValueAt(i)); }
+            if (hist.TryGetValue(name, out h) && h.Count >= 3) { DateTime from = DateTime.Now.AddHours(-sparkHours); foreach (HistPt p in h) if (p.T >= from) v.Add(p.MB); }
+            if (v.Count < 3) v.Clear();
+            if (v.Count == 0) { Ring ring; if (series.TryGetValue(name, out ring)) for (int i = 0; i < ring.Count; i++) v.Add(ring.ValueAt(i)); }
             if (v.Count < 3) { Txt(g, "-", fCN, cGray, box.X, box.Y, box.Width, box.Height, tfC); return; }
             // 点太多时按格子宽度抽样
             int n = Math.Min(v.Count, Math.Max(8, box.Width / 2));
@@ -927,10 +988,10 @@ namespace WatchDog
                 double val = v[(int)((long)i * (v.Count - 1) / (n - 1))];
                 pts[i] = new PointF(box.X + box.Width * i / (float)(n - 1), box.Bottom - 1 - (float)((box.Height - 2) * (val - lo) / span));
             }
-            int li = rt != null && rt.Level >= 1 ? Lx(rt.Level) : 3;
+            int li = rt != null && rt.Level >= 1 ? Lx(rt.Level) : 0;   // 正常的用健康色（绿），之前用的暗红 1 像素线在深色底上几乎看不见
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.DrawLines(li == 3 ? pAccDim : pCore[li], pts);
-            g.FillRectangle(li == 3 ? bAcc : bLv[li], pts[n - 1].X - 1.5f, pts[n - 1].Y - 1.5f, 3, 3);
+            using (Pen pe = new Pen(Color.FromArgb(li == 0 ? 190 : 255, LevelColor(li == 3 ? -1 : li)), 1.6f)) { pe.LineJoin = LineJoin.Round; g.DrawLines(pe, pts); }
+            g.FillRectangle(bLv[li], pts[n - 1].X - 2, pts[n - 1].Y - 2, 4, 4);
             g.SmoothingMode = SmoothingMode.None;
         }
         void FitColumns() { FitColumns(lv); if (lvG != null) FitColumns(lvG); }
