@@ -192,32 +192,31 @@ namespace WatchDog
         {
             foreach (PetPart p in petParts) { if (p.Native != null) p.Native.Dispose(); p.Native = null; }
             byte[] above = new byte[cw * ch];   // 已经处理过的、更上面的层合起来的不透明度
+            byte[] next = new byte[cw * ch];    // 这一组处理完后要并进 above 的
+            int[] px = new int[cw * ch];        // 整张画布的像素，反复用这一块（不为每个部件各开 2 MB）
             foreach (IGrouping<int, PetPart> grp in petParts.GroupBy(x => x.Z).OrderByDescending(g => g.Key))
             {
-                List<KeyValuePair<PetPart, int[]>> done = new List<KeyValuePair<PetPart, int[]>>();
+                Buffer.BlockCopy(above, 0, next, 0, above.Length);
                 foreach (PetPart p in grp)
                 {
-                    int[] px = ReadArgb(Path.Combine(PetDir, p.File), cw, ch);
-                    if (px == null) continue;
+                    if (!ReadArgb(Path.Combine(PetDir, p.File), cw, ch, px)) continue;
                     Rectangle r = Rectangle.Intersect(p.R, new Rectangle(0, 0, cw, ch));
                     if (!PetNoFill) r = FillUnder(px, above, r, cw, ch);
                     p.R = r;
                     p.Native = Crop(px, r, cw);
-                    done.Add(new KeyValuePair<PetPart, int[]>(p, px));
+                    // 同一组的换帧（比如几张眼睛）互相不算"上面"；只有平时显示的那张（或不分组的层）才算盖住下面的层
+                    if (p.Slot == null || p.Visible)
+                        for (int y = r.Top; y < r.Bottom; y++)
+                            for (int x = r.Left, k = y * cw + r.Left; x < r.Right; x++, k++)
+                            {
+                                byte a = (byte)((uint)px[k] >> 24);
+                                if (a > next[k]) next[k] = a;
+                            }
                 }
-                // 同一组的换帧（比如几张眼睛）互相不算"上面"；只有平时显示的那张（或不分组的层）才算盖住下面的层
-                foreach (KeyValuePair<PetPart, int[]> kv in done)
-                {
-                    if (kv.Key.Slot != null && !kv.Key.Visible) continue;
-                    int[] px = kv.Value; Rectangle r = kv.Key.R;
-                    for (int y = r.Top; y < r.Bottom; y++)
-                        for (int x = r.Left, i = y * cw + r.Left; x < r.Right; x++, i++)
-                        {
-                            byte a = (byte)((uint)px[i] >> 24);
-                            if (a > above[i]) above[i] = a;
-                        }
-                }
+                byte[] t = above; above = next; next = t;
             }
+            px = null; above = null; next = null;
+            GC.Collect();   // 启动时只做一次：把临时数组占的内存还回去
         }
         // px：整张画布的像素（ARGB）；above：上面的层盖住了哪里。返回补边后这一层的范围
         static Rectangle FillUnder(int[] px, byte[] above, Rectangle r, int cw, int ch)
@@ -256,7 +255,7 @@ namespace WatchDog
             }
             return grown;
         }
-        static int[] ReadArgb(string file, int cw, int ch)
+        static bool ReadArgb(string file, int cw, int ch, int[] px)
         {
             try
             {
@@ -265,13 +264,12 @@ namespace WatchDog
                 {
                     using (Graphics g = Graphics.FromImage(b)) { g.CompositingMode = CompositingMode.SourceCopy; g.DrawImage(src, new Rectangle(0, 0, cw, ch), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel); }
                     BitmapData bd = b.LockBits(new Rectangle(0, 0, cw, ch), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-                    int[] px = new int[cw * ch];
                     for (int y = 0; y < ch; y++) Marshal.Copy(bd.Scan0 + y * bd.Stride, px, y * cw, cw);
                     b.UnlockBits(bd);
-                    return px;
+                    return true;
                 }
             }
-            catch { return null; }
+            catch { return false; }
         }
         static Bitmap Crop(int[] px, Rectangle r, int cw)
         {
