@@ -855,6 +855,16 @@ namespace WatchDog
             return lv;
         }
         // ---------- 程序列表的每一格（两行卡片式）----------
+        const double BigMB = 2048;   // 没有问题、但占用超过 2 GB：稳定性标签显示"占用大"
+        // 按量级取颜色：< a 灰（很小，不抢眼）、< b 正常白、< c 偏黄（较大）、< d 黄（大）、≥ d 偏红（很大，但不是"出问题"的红）
+        Color MagColor(double v, double a, double b, double c, double d)
+        {
+            if (v < a) return cGray;
+            if (v < b) return cText;
+            if (v < c) return Mix(cText, cYellow, 0.45);
+            if (v < d) return cYellow;
+            return Mix(cYellow, cRed, 0.45);
+        }
         const int RowH = 48;
         double listMaxMB = 1;   // 列表里最大的内存，内存小横条按它算比例
         void DrawSubItem(object s, DrawListViewSubItemEventArgs e)
@@ -913,15 +923,18 @@ namespace WatchDog
                 }
                 case 3:
                 {
+                    // 内存数字：有问题时用稳定性的颜色（黄 / 红）；没问题时按量级：很小灰、一般白、大偏黄、很大黄
                     double mb = pr != null ? pr.PrivMB : 0;
-                    Txt(g, string.Format("{0:N0} MB", mb), fCN, cText, r.X + 6, r.Y, r.Width - 14, r.Height, tfR);
+                    Color mc = rt != null && rt.Level >= 1 ? LevelColor(rt.Level) : MagColor(mb, 100, 1024, BigMB, 4096);
+                    Txt(g, string.Format("{0:N0} MB", mb), mb >= BigMB || (rt != null && rt.Level >= 1) ? fCNb : fCN, mc, r.X + 6, r.Y, r.Width - 14, r.Height, tfR);
                     return;
                 }
                 case 4:
                 case 5:
                 {
                     double v = pr == null ? 0 : e.ColumnIndex == 4 ? pr.CpuPct : pr.IoMBs;
-                    Color c = e.ColumnIndex == 5 && v >= HeavyIoMBs ? cYellow : v < 0.05 ? cGray : cText;
+                    // 按量级着色：CPU 0.5% / 10% / 25% / 50%，读写 0.1 / 5 / 大量读写 / 3 倍大量读写
+                    Color c = e.ColumnIndex == 4 ? MagColor(v, 0.5, 10, 25, 50) : MagColor(v, 0.1, 5, HeavyIoMBs, HeavyIoMBs * 3);
                     Txt(g, e.ColumnIndex == 4 ? v.ToString("N1") + "%" : v.ToString("N1") + " MB/s", fCN, c, r.X + 6, r.Y, r.Width - 14, r.Height, tfR);
                     return;
                 }
@@ -933,14 +946,19 @@ namespace WatchDog
                     // 稳定性：彩色小标签（正常的用灰色描边，不抢眼）
                     if (rt == null) return;
                     int ml = rt.Level;
-                    Size ts = TextRenderer.MeasureText(g, rt.Text, fCNb, new Size(200, 30), tfL);
+                    string tag = rt.Text;
+                    bool big = ml <= 0 && pr != null && pr.PrivMB >= BigMB;   // 没问题但占用大：单独一种标签（不算问题，不改背景色）
+                    if (big) tag = "占用大";
+                    Size ts = TextRenderer.MeasureText(g, tag, fCNb, new Size(200, 30), tfL);
                     Rectangle pill = new Rectangle(r.X + 8, r.Y + (r.Height - 22) / 2, Math.Min(r.Width - 16, ts.Width + 16), 22);
                     PointF[] poly = CutPoly(pill.X, pill.Y, pill.Width, pill.Height, 6);
                     g.SmoothingMode = SmoothingMode.AntiAlias;
+                    Color bigC = MagColor(BigMB, 100, 1024, BigMB, 4096);
                     if (ml >= 1) { using (SolidBrush b = new SolidBrush(Color.FromArgb(46, LevelColor(ml)))) g.FillPolygon(b, poly); using (Pen pe = new Pen(LevelColor(ml))) g.DrawPolygon(pe, poly); }
+                    else if (big) { using (SolidBrush b = new SolidBrush(Color.FromArgb(24, bigC))) g.FillPolygon(b, poly); using (Pen pe = new Pen(Color.FromArgb(170, bigC))) g.DrawPolygon(pe, poly); }
                     else g.DrawPolygon(pAccDim, poly);
                     g.SmoothingMode = SmoothingMode.None;
-                    Txt(g, rt.Text, fCNb, ml >= 1 ? LevelColor(ml) : ml == 0 ? cCyan : cGray, pill.X, pill.Y, pill.Width, pill.Height, tfC);
+                    Txt(g, tag, fCNb, ml >= 1 ? LevelColor(ml) : big ? bigC : ml == 0 ? cCyan : cGray, pill.X, pill.Y, pill.Width, pill.Height, tfC);
                     return;
                 }
                 case 7:

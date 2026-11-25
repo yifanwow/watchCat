@@ -510,11 +510,12 @@ namespace WatchDog
         {
             if (petClip)
             {
-                int idx = ClipFrameAt(petClock.Elapsed.TotalSeconds);
-                string ck = "clip" + idx;
+                int idx = ClipStep(petClock.Elapsed.TotalSeconds);
+                if (idx < 0) return;
+                string ck = clipNow + idx;
                 if (!force && ck == petLastKey) return;
                 petLastKey = ck;
-                DrawClipFrame(pet.Surface, idx);
+                DrawClipNow(pet.Surface, idx);
                 pet.Push(petAt);
                 return;
             }
@@ -547,6 +548,7 @@ namespace WatchDog
             if (t > blinkAt + AnimLength("blink") + 0.05) blinkAt = t + 2.5 + petRnd.NextDouble() * 3.5;          // 下次眨眼：2.5–6 秒后
             if (t > glitchAt + 0.3) glitchAt = t + 4 + petRnd.NextDouble() * 5;             // 下次故障闪：4–9 秒后
             if (bubbleUntil > 0 && t > bubbleUntil) HideBubble();
+            ClipHousekeeping(t);
             RenderPet(false);
         }
 
@@ -563,6 +565,7 @@ namespace WatchDog
             {
                 petGreeted = true; petSpoken = now;
                 waveFrom = petClock.Elapsed.TotalSeconds + 0.4;
+                PlayClip("wave");   // 序列帧：打招呼时挥手（挥手动画里嘴是张开的）
                 Issue top = issues.FirstOrDefault(i => i.Level >= 1);
                 if (verdict[0] == "数据收集中" || verdict[0] == "正在检查…") PetSay("我是 Fegmi～ 正在熟悉你的电脑，开着窗口 10 分钟后就能告诉你谁在漏内存。", 0, null, 0);
                 else if (top == null) PetSay("我是 Fegmi～ 帮你看过了，内存一切正常。", 0, null, 0);
@@ -580,6 +583,7 @@ namespace WatchDog
         {
             waveFrom = petClock.Elapsed.TotalSeconds;
             List<Issue> bad = issues.Where(i => i.Level >= 1).ToList();
+            PlayClip(bad.Count > 0 ? "worried" : "happy");   // 序列帧：点她时，有问题就担心地说，没问题就开心
             if (verdict[0] == "数据收集中") PetSay("还在收集数据～ 开着窗口 10 分钟后给你初步判断。", 0, null, 0);
             else if (bad.Count == 0) PetSay("一切正常～ " + verdict[2] + "。有问题我会第一时间告诉你。", 0, null, 0);
             else PetSay(verdict[0] + "。最要紧的是：" + bad[0].Title + "。" + (bad[0].Target != null ? "点这里看它的详情。" : ""), bad[0].Level, bad[0].Target, bad[0].Level);
@@ -592,6 +596,7 @@ namespace WatchDog
             double t = petClock.Elapsed.TotalSeconds;
             bubbleText = text; bubbleTarget = target; bubbleLevel = Math.Max(0, level); sayMood = mood;
             talkFrom = t; talkUntil = t + Math.Min(2.6, 0.5 + text.Length * 0.04);
+            if (petClip && clipNext == null && clipNow == "idle") PlayClip(level >= 1 ? "worried" : "talk");   // 序列帧：说话时播说话 / 担心的动画
             bubbleUntil = t + (level >= 1 ? 14 : 8) + text.Length * 0.05;
             RenderBubble();
             PlaceBubble();
@@ -679,20 +684,25 @@ namespace WatchDog
             Size sz = PetSize(h);
             if (petClip)
             {
-                // 序列帧：取 4 帧排成一张，再写一份内存占用说明
-                int cnt = clipDelta.Count + 1;
-                int[] pick = { 0, cnt / 4, cnt / 2, cnt * 3 / 4 };
+                // 序列帧：每个动作取一帧排成一张（待机、挥手中间、说话、担心、开心），再写一份内存占用说明
+                List<ClipData> all = new List<ClipData>();
+                foreach (string nm in ClipNames) { ClipData cd = nm == "idle" ? clips["idle"] : BuildClipData(nm, h); if (cd != null) all.Add(cd); }
                 using (Bitmap one = new Bitmap(sz.Width, sz.Height, PixelFormat.Format32bppPArgb))
-                using (Bitmap sheet = new Bitmap(sz.Width * 4, sz.Height, PixelFormat.Format32bppPArgb))
+                using (Bitmap sheet = new Bitmap(sz.Width * all.Count, sz.Height, PixelFormat.Format32bppPArgb))
                 using (Graphics g = Graphics.FromImage(sheet))
                 {
                     g.Clear(cBg);
-                    for (int i = 0; i < 4; i++) { DrawClipFrame(one, pick[i]); g.DrawImage(one, i * sz.Width, 0, sz.Width, sz.Height); }
+                    for (int i2 = 0; i2 < all.Count; i2++) { DrawClipFrame(one, all[i2], all[i2].Count / 2); g.DrawImage(one, i2 * sz.Width, 0, sz.Width, sz.Height); }
                     sheet.Save(file, ImageFormat.Png);
                 }
-                long full = (long)cnt * sz.Width * sz.Height * 4;
-                File.WriteAllText(Path.ChangeExtension(file, null) + "-clip.txt", string.Format("帧数 {0}，显示大小 {1}×{2}；只存变化小块：{3:N1} MB；整张存：{4:N1} MB（省 {5:P0}）",
-                    cnt, sz.Width, sz.Height, clipBytes / 1048576.0, full / 1048576.0, 1 - clipBytes / (double)full), System.Text.Encoding.UTF8);
+                System.Text.StringBuilder rep = new System.Text.StringBuilder();
+                foreach (ClipData cd in all)
+                {
+                    long full = (long)cd.Count * sz.Width * sz.Height * 4;
+                    rep.AppendFormat("{0}：{1} 帧，只存变化小块 {2:N1} MB，整张存 {3:N1} MB（省 {4:P0}），可切换的帧 {5}" + Environment.NewLine, cd.Name, cd.Count, cd.Bytes / 1048576.0, full / 1048576.0, 1 - cd.Bytes / (double)full, string.Join(",", cd.SwitchAt.OrderBy(x => x).Select(x => x + 1)));
+                }
+                rep.AppendFormat("显示大小 {0}×{1}", sz.Width, sz.Height);
+                File.WriteAllText(Path.ChangeExtension(file, null) + "-clip.txt", rep.ToString(), System.Text.Encoding.UTF8);
                 return;
             }
             PetPose[] poses = { new PetPose(), new PetPose(), new PetPose(), new PetPose() };
