@@ -5,7 +5,8 @@
 //
 // 省内存：每段动画按显示大小解码后，第 1 帧整张存，后面每帧只存"和第 1 帧不一样的 16×16 小块"；故障层只存有像素的小块。
 // 播放：第 1 帧整块复制到一块缓冲区 → 盖上这一帧变了的小块 → 把故障层的小块混合上去 → 整块复制到窗口画面。只是复制像素，不解码、不缩放。
-// 载入（解码、缩放、比较）在后台线程做；待机常驻，其他动作用到时才载入，1 分钟没用就释放。
+// 载入（解码、缩放、比较）在后台线程做；待机在她出来时常驻，其他动作用到时才载入，播完就释放。
+// 她休息（设置里关掉）时全部释放；主窗口藏起来时只留待机（Monitor.Pet.cs 的 ReleasePet）。
 // 程序运行中素材文件变了（比如画师交了新版），会自动重新载入。
 using System;
 using System.Collections.Generic;
@@ -182,7 +183,7 @@ namespace WatchDog
                     BeginInvoke((MethodInvoker)delegate
                     {
                         clipLoading.Remove(name);
-                        if (c == null || c.PetH != petH) return;   // 载入期间大小又变了：作废
+                        if (c == null || c.PetH != petH || pet == null || !pet.Visible || clipNext != name) return;   // 载入期间大小变了 / 她藏起来了 / 不想播了：作废
                         c.LastUsed = petClock.Elapsed.TotalSeconds;
                         clips[name] = c;
                         clipBytes = clips.Values.Sum(x => x.Bytes);
@@ -231,7 +232,11 @@ namespace WatchDog
             ClipData cur; if (!clips.TryGetValue(clipNow, out cur)) { clipNow = "idle"; clipStart = t; if (!clips.TryGetValue("idle", out cur)) return -1; }
             int idx = (int)((t - clipStart) * ClipFps);
             bool loops = clipNow == "idle" || ((clipNow == "talk" || clipNow == "worried") && t < talkUntil);
-            if (!loops && idx >= cur.Count) { Switch("idle", t); return 0; }   // 播一次的动作（挥手、开心）、说完话的说话动作：播完回待机
+            if (!loops && idx >= cur.Count)   // 播一次的动作（挥手、开心）、说完话的说话动作：播完回待机，并马上释放（下次用到再载入）
+            {
+                if (clipNext != clipNow) { clips.Remove(clipNow); clipBytes = clips.Values.Sum(x => x.Bytes); }
+                Switch("idle", t); return 0;
+            }
             idx %= cur.Count;
             if (clipNow == "idle" && clipNext != null && cur.SwitchAt.Contains(idx) && clips.ContainsKey(clipNext)) { string nx = clipNext; clipNext = null; Switch(nx, t); return 0; }
             cur.LastUsed = clipNow == "idle" ? double.MaxValue : t;
@@ -271,13 +276,13 @@ namespace WatchDog
             finally { target.UnlockBits(bd); }
         }
 
-        // 每隔几秒：素材文件变了就整套重新载入；不常用的动作 1 分钟没播就释放
+        // 每隔几秒：素材文件变了就整套重新载入；没在播、也不在排队的动作释放掉（兜底，正常播完就已经释放了）
         double clipCheckAt;
         void ClipHousekeeping(double t)
         {
             if (!petClip || t < clipCheckAt) return;
             clipCheckAt = t + 5;
-            foreach (string k in clips.Keys.Where(k => k != "idle" && k != clipNow && t - clips[k].LastUsed > 60).ToList()) clips.Remove(k);
+            foreach (string k in clips.Keys.Where(k => k != "idle" && k != clipNow && k != clipNext).ToList()) clips.Remove(k);
             clipBytes = clips.Values.Sum(x => x.Bytes);
             string st = ClipStampNow();
             if (st != clipStamp && st.Length > 0)

@@ -212,6 +212,7 @@ namespace WatchDog
                     }
                     if (snapshot != null) Snapshot(form, snapshot, bmp);
                     Monitor.PetNoFill = a.ContainsKey("petraw");   // --petraw：不补边（对比用）
+                    if (a.ContainsKey("petmem")) form.PetMemTest(Get(a, "petmem", "petmem.txt"));   // --petmem x.txt：Fegmi 召唤 / 藏起来 / 休息时的内存
                     if (a.ContainsKey("petsnap")) form.SnapPet(Get(a, "petsnap", "pet.png"), int.Parse(Get(a, "petheight", "480")));   // --petsnap x.png：叠好的看板娘
                     // --window rules|fixes|fixlog|ignored|settings|ask|prompt --winsnap x.png [--pick 规则id]：打开子窗口截图
                     if (a.ContainsKey("window")) form.SnapWindow(Get(a, "window", ""), Get(a, "winsnap", "window.png"), Get(a, "pick", null));

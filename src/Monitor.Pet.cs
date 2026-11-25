@@ -1,4 +1,4 @@
-// 看板娘 Fegmi（桌宠）：贴在主窗口右边的透明小窗口，跟着主窗口移动、缩放、隐藏 / 最小化
+﻿// 看板娘 Fegmi（桌宠）：贴在主窗口右边的透明小窗口，跟着主窗口移动、缩放、隐藏 / 最小化
 // 素材在 assets\mascot\：parts.json + parts\*.png（512×1024 画布对齐，每个部件一张透明 PNG）
 //
 // 怎么动：按显示大小把每个部件裁好、缩好缓存起来（约 2–3 MB），每帧按姿势叠到一块固定的位图上，用分层窗口（每像素透明）显示。
@@ -76,7 +76,7 @@ namespace WatchDog
             UpdateLayeredWindow(Handle, screen, ref dst, ref sz, memDC, ref src, 0, ref bl, 2);
             ReleaseDC(IntPtr.Zero, screen);
         }
-        void FreeSurface()
+        public void FreeSurface()
         {
             if (Surface != null) { Surface.Dispose(); Surface = null; }
             if (memDC != IntPtr.Zero) { SelectObject(memDC, oldObj); DeleteDC(memDC); memDC = IntPtr.Zero; }
@@ -407,13 +407,15 @@ namespace WatchDog
             return p;
         }
 
-        void BuildPet()
+        void BuildPet() { if (!selfTest) CreatePet(); }
+        void CreatePet()
         {
-            if (selfTest || !LoadPetParts()) return;
+            // 素材等她第一次出来时才载入：设置里关着她，启动时就一张图都不读
+            if (ClipFiles("idle").Count < 2 && !File.Exists(Path.Combine(PetDir, "parts.json"))) return;
             LoadPetSettings();
             pet = new LayeredWindow("Fegmi · WatchCat 小助手"); pet.Owner = this; pet.Cursor = Cursors.Hand;
             bubble = new LayeredWindow("Fegmi 说的话"); bubble.Owner = this; bubble.Cursor = Cursors.Hand;
-            petTimer = new Timer(); petTimer.Interval = petClip ? 40 : 100;   // 序列帧每秒 12 帧，定时器要比它快才不丢帧
+            petTimer = new Timer(); petTimer.Interval = 40;   // 序列帧每秒 12 帧，定时器要比它快才不丢帧
             petTimer.Tick += delegate { PetTick(); };
             petClock.Start();
             LocationChanged += delegate { PlacePet(); };
@@ -484,7 +486,15 @@ namespace WatchDog
                 if (pet.Visible) pet.Hide();
                 HideBubble();
                 petTimer.Stop();
+                ReleasePet(!PetOn());   // 休息：全部释放；只是主窗口藏起来：留着待机，其他动作释放
                 return;
+            }
+            if (!petLoaded)
+            {
+                if (petBroken) return;
+                if (!LoadPetParts()) { petBroken = true; return; }
+                petLoaded = true; petH = 0;
+                petTimer.Interval = petClip ? 40 : 100;
             }
             if (petH == 0) BuildPetLayers(PetWantH());
             Size sz = PetSize(petH);
@@ -493,7 +503,7 @@ namespace WatchDog
             int x = a.X + o.X, y = a.Y + o.Y;
             x = Math.Max(wa.Left - sz.Width / 3, Math.Min(x, wa.Right - sz.Width));   // 最多藏进屏幕左边三分之一，右边不出屏幕
             y = Math.Max(wa.Top, Math.Min(y, wa.Bottom - sz.Height));
-            petAt = new Point(x, y);
+            petAt = petTestOffscreen ? new Point(-6000, -6000) : new Point(x, y);
             if (!pet.Visible)
             {
                 pet.EnsureSurface(sz.Width, sz.Height);
@@ -505,6 +515,29 @@ namespace WatchDog
             }
             else if (pet.Location != petAt) pet.Location = petAt;   // 只挪位置：内容还在，不用重画
             PlaceBubble();
+        }
+
+        bool petLoaded, petBroken;   // 素材已载入 / 载入失败（不再反复尝试）
+        // 她不在屏幕上时还内存：all = 休息（设置里关掉），动画数据、画面缓冲全部释放，再召唤时重新建待机（几百毫秒）；
+        // 否则（主窗口最小化 / 藏到托盘）只释放待机以外的动作，回来时马上就有画面
+        void ReleasePet(bool all)
+        {
+            bool freed = false;
+            foreach (string k in clips.Keys.Where(k => all || k != "idle").ToList()) { clips.Remove(k); freed = true; }
+            clipNow = "idle"; clipNext = null;
+            if (all)
+            {
+                if (clipBuf != null) { clipBuf = null; freed = true; }
+                if (petLayers.Count > 0) { foreach (PetLayer l in petLayers) l.B.Dispose(); petLayers.Clear(); freed = true; }
+                if (petH != 0) { petH = 0; freed = true; }
+                if (pet.Surface != null) { pet.FreeSurface(); freed = true; }
+                if (bubble.Surface != null) { bubble.FreeSurface(); freed = true; }
+            }
+            if (!freed) return;
+            clipBytes = clips.Values.Sum(x => x.Bytes);
+            System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();   // 大块数组在大对象堆里，压缩一次才会真正还给系统
+            PetLog(all ? "休息：释放全部动画数据和画面" : "藏起来：释放待机以外的动作");
         }
 
         void RenderPet(bool force)
@@ -676,6 +709,41 @@ namespace WatchDog
             if (petMenu != null) petMenu.Dispose();
             if (bubble != null) bubble.Dispose();
             if (pet != null) pet.Dispose();
+        }
+
+        // ---------- 自测 --petmem x.txt：在屏幕外召唤 / 播动作 / 藏起来 / 休息，每一步记一次内存 ----------
+        bool petTestOffscreen;
+        internal void PetMemTest(string file)
+        {
+            List<string> o = new List<string>();
+            Action<string> m = label =>
+            {
+                for (int i = 0; i < 5; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(30); }
+                GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+                using (Process p = Process.GetCurrentProcess())
+                    o.Add(string.Format("{0,-14} 私有 {1,6:N1} MB · 托管堆 {2,6:N1} MB · 动作数据 {3,5:N1} MB [{4}] · 画面 {5} · GDI {6}",
+                        label, p.PrivateMemorySize64 / 1048576.0, GC.GetTotalMemory(true) / 1048576.0, clipBytes / 1048576.0,
+                        string.Join(",", clips.Keys), pet != null && pet.Surface != null ? "有" : "无", Native.GetGuiResources(p.Handle, 0)));
+            };
+            m("开始前");
+            petTestOffscreen = true;
+            CreatePet();
+            if (pet == null) { File.WriteAllText(file, "没有素材"); return; }
+            petGreeted = true;   // 不打招呼，免得气泡出现在屏幕上
+            petOn = false; PlacePet(); m("启动（关着）");
+            petOn = true; PlacePet(); m("召唤（待机）");
+            Action loadAll = () => { foreach (string n in ClipNames.Skip(1)) { ClipData c = BuildClipData(n, petH); if (c != null) clips[n] = c; } clipBytes = clips.Values.Sum(x => x.Bytes); };
+            loadAll(); m("五段全载入");
+            double t = petClock.Elapsed.TotalSeconds;
+            Switch("wave", t - 100); ClipStep(t); m("挥手播完");
+            clipCheckAt = 0; ClipHousekeeping(t); m("兜底清理");
+            loadAll(); Hide(); m("主窗口藏起来"); Show();
+            loadAll(); m("回来再全载入");
+            petOn = false; PlacePet(); m("休息（关掉）");
+            petOn = true; PlacePet(); m("再召唤");
+            petOn = false; PlacePet(); m("再休息");
+            o.Add("高度 " + petH + "（0 = 已释放）· 大小倍数 " + petScale);
+            File.WriteAllLines(file, o.ToArray(), new System.Text.UTF8Encoding(true));
         }
 
         // ---------- 自测：几个姿势和一个气泡拼成一张图 ----------
