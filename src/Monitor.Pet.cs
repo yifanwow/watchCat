@@ -147,6 +147,7 @@ namespace WatchDog
 
         bool LoadPetParts()
         {
+            if (LoadPetClip()) return true;   // 有 idle 序列帧就用序列帧（Monitor.PetClip.cs）
             try
             {
                 string jf = Path.Combine(PetDir, "parts.json");
@@ -328,6 +329,7 @@ namespace WatchDog
         // 按高度 h 把每个部件裁出来、缩好，缓存成预乘透明度的小图（画的时候不用再缩放，很快）
         void BuildPetLayers(int h)
         {
+            if (petClip) { BuildClip(h); petH = h; return; }
             foreach (PetLayer l in petLayers) l.B.Dispose();
             petLayers.Clear();
             float k = PetScale(h);
@@ -387,13 +389,15 @@ namespace WatchDog
             p.Hat = (float)(Math.Sin(t * 2 * Math.PI / 5.3) * 1.2);                         // 帽子轻轻晃
             p.Star = (float)(Math.Sin(t * 2 * Math.PI / 2.7) * 7);                          // 帽尖星星摆
             if (t >= glitchAt && t < glitchAt + 0.14) p.GlitchDx = (t - glitchAt < 0.07 ? 1 : -1) * Math.Max(2, petH / 90);   // 故障层错位闪一下
-            bool worried = t < bubbleUntil && sayMood >= 2;                                 // 只在说到问题时皱眉，平时不苦着脸
+            bool speaking = t < talkUntil;
+            bool smilingAfterSpeech = !speaking && t < bubbleUntil;
+            bool worried = speaking && sayMood >= 2;
             if (worried) { p.Frames["brows"] = "brows-worried"; p.Frames["mouth"] = "mouth-worried"; }
             if (petRig < 2) return p;
             PetAnimFrame f = AnimAt("blink", t - blinkAt, false);
             if (f != null) p.Frames[f.Slot] = f.Frame;
-            else if (t < talkUntil && sayMood == 0 && HasLayer("eyes-happy")) p.Frames["eyes"] = "eyes-happy";   // 说好消息时笑眯眯
-            if (t < talkUntil)
+            else if ((smilingAfterSpeech || (speaking && sayMood == 0)) && HasLayer("eyes-happy")) p.Frames["eyes"] = "eyes-happy";
+            if (speaking)
             {
                 f = AnimAt("talk", t - talkFrom, true);
                 if (f != null && !(worried && f.Frame == "mouth-smile")) p.Frames[f.Slot] = f.Frame;   // 担心时说话的间隙用担心的嘴
@@ -409,7 +413,7 @@ namespace WatchDog
             LoadPetSettings();
             pet = new LayeredWindow("Fegmi · WatchCat 看板娘"); pet.Owner = this; pet.Cursor = Cursors.Hand;
             bubble = new LayeredWindow("Fegmi 说的话"); bubble.Owner = this; bubble.Cursor = Cursors.Hand;
-            petTimer = new Timer(); petTimer.Interval = 100; petTimer.Tick += delegate { PetTick(); };
+            petTimer = new Timer(); petTimer.Interval = petClip ? 40 : 100;   // 序列帧每秒 12 帧，定时器要比它快才不丢帧 petTimer.Tick += delegate { PetTick(); };
             petClock.Start();
             LocationChanged += delegate { PlacePet(); };
             SizeChanged += delegate { sizeChangedAt = petClock.Elapsed.TotalSeconds; PlacePet(); };
@@ -504,6 +508,16 @@ namespace WatchDog
 
         void RenderPet(bool force)
         {
+            if (petClip)
+            {
+                int idx = ClipFrameAt(petClock.Elapsed.TotalSeconds);
+                string ck = "clip" + idx;
+                if (!force && ck == petLastKey) return;
+                petLastKey = ck;
+                DrawClipFrame(pet.Surface, idx);
+                pet.Push(petAt);
+                return;
+            }
             PetPose p = PoseAt(petClock.Elapsed.TotalSeconds);
             string key = p.Key();
             if (!force && key == petLastKey) return;
@@ -587,12 +601,12 @@ namespace WatchDog
         }
         void HideBubble() { bubbleUntil = -1; talkUntil = -1; if (bubble != null && bubble.Visible) bubble.Hide(); }
 
-        float BubbleFontPx() { using (Graphics g = CreateGraphics()) return 9f * g.DpiX / 72f; }
+        float BubbleFontPx() { using (Graphics g = CreateGraphics()) return 10f * g.DpiY / 72f; }
         void RenderBubble()
         {
             float fpx = BubbleFontPx();
             using (Font f = new Font("Microsoft YaHei UI", fpx, GraphicsUnit.Pixel))
-            using (Font ft = new Font("Bahnschrift SemiBold", fpx * 0.95f, GraphicsUnit.Pixel))
+            using (Font ft = new Font(f.FontFamily, fpx, FontStyle.Bold, GraphicsUnit.Pixel))
             using (Graphics mg = CreateGraphics())
             {
                 int w = (int)(fpx * 24), pad = (int)(fpx * 1.1), tail = (int)(fpx * 1.2);
@@ -663,6 +677,24 @@ namespace WatchDog
             if (!LoadPetParts()) return;
             BuildPetLayers(h);
             Size sz = PetSize(h);
+            if (petClip)
+            {
+                // 序列帧：取 4 帧排成一张，再写一份内存占用说明
+                int cnt = clipDelta.Count + 1;
+                int[] pick = { 0, cnt / 4, cnt / 2, cnt * 3 / 4 };
+                using (Bitmap one = new Bitmap(sz.Width, sz.Height, PixelFormat.Format32bppPArgb))
+                using (Bitmap sheet = new Bitmap(sz.Width * 4, sz.Height, PixelFormat.Format32bppPArgb))
+                using (Graphics g = Graphics.FromImage(sheet))
+                {
+                    g.Clear(cBg);
+                    for (int i = 0; i < 4; i++) { DrawClipFrame(one, pick[i]); g.DrawImage(one, i * sz.Width, 0, sz.Width, sz.Height); }
+                    sheet.Save(file, ImageFormat.Png);
+                }
+                long full = (long)cnt * sz.Width * sz.Height * 4;
+                File.WriteAllText(Path.ChangeExtension(file, null) + "-clip.txt", string.Format("帧数 {0}，显示大小 {1}×{2}；只存变化小块：{3:N1} MB；整张存：{4:N1} MB（省 {5:P0}）",
+                    cnt, sz.Width, sz.Height, clipBytes / 1048576.0, full / 1048576.0, 1 - clipBytes / (double)full), System.Text.Encoding.UTF8);
+                return;
+            }
             PetPose[] poses = { new PetPose(), new PetPose(), new PetPose(), new PetPose() };
             poses[1].Frames["eyes"] = "eyes-closed"; poses[1].Star = 7;
             poses[2].Frames["brows"] = "brows-worried"; poses[2].Frames["mouth"] = "mouth-worried"; poses[2].Hat = 1.2f;

@@ -26,6 +26,11 @@ $pet = Join-Path $stage 'assets\mascot'
 New-Item -ItemType Directory -Path (Join-Path $pet 'parts') -Force | Out-Null
 Copy-Item (Join-Path $dir 'assets\mascot\parts.json') $pet
 Copy-Item (Join-Path $dir 'assets\mascot\parts\*.png') (Join-Path $pet 'parts')
+# Sequence-frame animations (idle, and later wave / talk / worried ...): every sub folder of assets\mascot that holds frames
+foreach ($clip in 'idle', 'wave', 'talk', 'worried', 'happy') {
+    $src = Join-Path $dir "assets\mascot\$clip"
+    if (Test-Path $src) { New-Item -ItemType Directory -Path (Join-Path $pet $clip) -Force | Out-Null; Copy-Item (Join-Path $src '*.png') (Join-Path $pet $clip) }
+}
 
 @"
 WatchDog v$Version  —  Windows 内存泄漏"体检 + 修复"工具
