@@ -413,7 +413,8 @@ namespace WatchDog
             LoadPetSettings();
             pet = new LayeredWindow("Fegmi · WatchCat 看板娘"); pet.Owner = this; pet.Cursor = Cursors.Hand;
             bubble = new LayeredWindow("Fegmi 说的话"); bubble.Owner = this; bubble.Cursor = Cursors.Hand;
-            petTimer = new Timer(); petTimer.Interval = petClip ? 40 : 100;   // 序列帧每秒 12 帧，定时器要比它快才不丢帧 petTimer.Tick += delegate { PetTick(); };
+            petTimer = new Timer(); petTimer.Interval = petClip ? 40 : 100;   // 序列帧每秒 12 帧，定时器要比它快才不丢帧
+            petTimer.Tick += delegate { PetTick(); };
             petClock.Start();
             LocationChanged += delegate { PlacePet(); };
             SizeChanged += delegate { sizeChangedAt = petClock.Elapsed.TotalSeconds; PlacePet(); };
@@ -539,6 +540,7 @@ namespace WatchDog
             int want = PetWantH();
             if (want != petH && t - sizeChangedAt > 0.3 && !(petDown && petDragging))
             {
+                if (petClip) PetLog("大小变了：现在 " + petH + "，要 " + want);
                 BuildPetLayers(want);
                 Size sz = PetSize(petH);
                 pet.EnsureSurface(sz.Width, sz.Height);

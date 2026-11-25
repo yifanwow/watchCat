@@ -193,8 +193,20 @@ namespace WatchDog
         }
 
         // 按新高度重建：待机同步建好（换大小时要马上有画面），其他动作清掉，用到时再在后台载入
+        // Fegmi 的载入 / 重建记录（data\pet.log，只在重建时写一行，平时不写；超过 100 KB 清空）
+        void PetLog(string m)
+        {
+            try
+            {
+                string f = Path.Combine(DataDir, "pet.log");
+                if (File.Exists(f) && new FileInfo(f).Length > 100000) File.Delete(f);
+                File.AppendAllText(f, DateTime.Now.ToString("HH:mm:ss.fff") + " " + m + Environment.NewLine);
+            }
+            catch { }
+        }
         void BuildClip(int h)
         {
+            System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
             clips.Clear();
             ClipData idle = BuildClipData("idle", h);
             if (idle != null) { idle.LastUsed = double.MaxValue; clips["idle"] = idle; }
@@ -202,6 +214,7 @@ namespace WatchDog
             clipNow = "idle"; clipNext = null; clipStart = petClock.IsRunning ? petClock.Elapsed.TotalSeconds : 0;
             clipBuf = null;
             GC.Collect();
+            PetLog("重建待机 h=" + h + " 帧数=" + (idle != null ? idle.Count : 0) + " 用时 " + sw.ElapsedMilliseconds + " ms");
         }
 
         // 想播某个动作：先在后台载入，等待机播到标准姿势再切过去
@@ -270,6 +283,7 @@ namespace WatchDog
             if (st != clipStamp && st.Length > 0)
             {
                 // 新素材：重新量范围、重建（会按新范围重新算大小）
+                PetLog("素材变了：" + clipStamp + " → " + st);
                 if (LoadPetClip()) { petH = 0; pet.Hide(); PlacePet(); }
             }
         }
