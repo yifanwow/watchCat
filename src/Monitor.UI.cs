@@ -575,7 +575,7 @@ namespace WatchDog
             Rule wr;
             if (guarded.TryGetValue(name, out wr) && wr.MinMB > 0) sub += string.Format("  ·  看门猫在管：超过 {0:N0} MB {1}", wr.MinMB, wr.Auto && wr.FixType != "none" ? "且空闲时自动处理" : "时提醒");
             else if (watched.TryGetValue(name, out wr)) sub += string.Format("  ·  ◉ 看门猫监控中（超过 {0} MB {1}）", wr.MinMB, wr.Auto ? "自动重启" : "提醒");
-            if (ecoNames.Contains(name)) sub += "  ·  节能模式中";
+            if (ecoNames.Contains(name)) sub += "  ·  已降低性能消耗";
             if (FeedbackOf(name) == "bad") sub += "  ·  上次重启后不正常（右键可以建修复规则）";
             else if (IsBrowser(name)) sub += "  ·  浏览器：内存随网页涨落";
             Txt(g, sub, fCN, cGray, 56, 58, w - 70, 18);
@@ -1312,7 +1312,7 @@ namespace WatchDog
             g.FillRectangle(bBg, 0, 0, w, h);
             g.DrawLine(pAccDim, 0, 0, w, 0);
             g.FillRectangle(bHaz, 12, 9, 22, 10);
-            string txt = string.Format("每 5 秒刷新 · 实时数据 {3} 条 · 像素十字 = 重点监控 · 右键程序可写备注、开节能模式、让看门猫监控它",
+            string txt = string.Format("每 5 秒刷新 · 实时数据 {3} 条 · 像素十字 = 重点监控 · 右键程序可写备注、降低性能消耗、让看门猫监控它",
                 selfMB, selfCpu, selfGdi, series.Count, Theme.OkName);
             Txt(g, txt, fCN, cGray, 42, 0, w - 54, h);
         }

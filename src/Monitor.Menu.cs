@@ -36,24 +36,24 @@ namespace WatchDog
 
             ToolStripItem hFix = Header("处理");
             menuFix = Item("", () => cCyan, "修复 / 重启", null, delegate { FixSelected(); });
-            menuEco = Item("", () => cCyan, "节能模式", "低优先级 · 不影响使用", delegate { ToggleEco(selected); });
+            menuEco = Item("", () => cCyan, "降低性能消耗", "低优先级 · 不影响使用", delegate { ToggleEco(selected); });
             menuEnd = Item("", () => cRed, "结束程序", null, delegate { KillTarget(selected); });
             menuOpen = Item("", () => cGray, "打开文件位置", null, delegate { OpenLocation(selected); });
-            menuNote = Item("", () => cGray, "写备注…", null, delegate { EditNote(selected); });
+            menuNote = Item("", () => cGray, "写备注", null, delegate { EditNote(selected); });
             Group(hFix, menuFix, menuEco, menuEnd, menuOpen, menuNote);
 
             ToolStripItem hDiag = Header("诊断");
             menuAnalyze = Item("", () => cYellow, "分析内存泄漏", "管理员 · 约 1 分钟", delegate { AnalyzeSelected(); });
             menuCapture = Item("", () => cYellow, "记录句柄现场", "管理员", delegate { CaptureSelected(); });
             menuIncident = Item("", () => cYellow, "打开分析报告", null, delegate { OpenIncident(selected); });
-            menuReport = Item("", () => cGray, "生成问题报告…", "发给开发者", delegate { MakeReport(selected); });
+            menuReport = Item("", () => cGray, "生成问题报告", "发给开发者", delegate { MakeReport(selected); });
             Group(hDiag, menuAnalyze, menuCapture, menuIncident, menuReport);
 
             ToolStripItem hWatch = Header("监控");
             menuWatch = Item("", () => cCyan, "超过上限时提醒", null, delegate { AddWatch(selected, false); });
             menuWatchA = Item("", () => cCyan, "超过上限时自动重启", null, delegate { AddWatch(selected, true); });
             menuUnwatch = Item("", () => cGray, "取消监控", null, delegate { RemoveWatch(selected); });
-            menuWizard = Item("", () => cAccent, "建修复规则…", "选重启方式，先试一次", delegate { ShowRuleWizard(selected); });
+            menuWizard = Item("", () => cAccent, "建修复规则", "选重启方式，先试一次", delegate { ShowRuleWizard(selected); });
             Group(hWatch, menuWatch, menuWatchA, menuUnwatch, menuWizard);
 
             ToolStripItem hIssue = Header("提醒");
@@ -77,16 +77,16 @@ namespace WatchDog
                 if (!string.IsNullOrEmpty(DescOf(n))) sp.Add(DescOf(n));
                 if (r != null && r.Count > 1) sp.Add(r.Count + " 个进程");
                 sp.Add(rt.Text);
-                if (ecoNames.Contains(n)) sp.Add("节能中");
+                if (ecoNames.Contains(n)) sp.Add("已降低性能消耗");
                 menuSub.Text = string.Join(" · ", sp);
                 bool prot = Protected.Contains(n), svc = n.StartsWith("svc:");
                 menuFix.Text = btnPrimary.Text;
                 menuEco.Visible = EcoAllowed(n);
                 bool eco = ecoNames.Contains(n);
-                menuEco.Text = eco ? "退出节能模式" : "节能模式";
+                menuEco.Text = eco ? "恢复正常性能消耗" : "降低性能消耗";
                 SetHint(menuEco, eco ? "恢复正常优先级" : "低优先级 · 不影响使用");
                 menuEnd.Visible = !prot;
-                menuNote.Text = HasNote(n) ? "改备注…" : "写备注…";
+                menuNote.Text = HasNote(n) ? "改备注" : "写备注";
                 menuIncident.Visible = incidents.ContainsKey(n);
                 bool hasIssue = IssueOf(n) != null;
                 menuSnooze.Visible = hasIssue; menuNormal.Visible = hasIssue;
