@@ -73,7 +73,12 @@ namespace WatchDog
                 ProcRow r; rows.TryGetValue(n, out r);
                 Rating rt = GetRating(n, r != null ? r.PrivMB : 0);
                 menuTitle.Text = n; menuTitle.Image = GetIcon(n.StartsWith("svc:") ? n : n); menuTitle.ForeColor = rt.Level >= 1 ? LevelColor(rt.Level) : cText;
-                menuSub.Text = (DescOf(n) ?? "") + (r != null && r.Count > 1 ? " · " + r.Count + " 个进程" : "") + " · " + rt.Text + (ecoNames.Contains(n) ? " · 节能中" : "");
+                List<string> sp = new List<string>();   // 说明 · 进程数 · 稳定性 · 节能中（没有的项不留多余的分隔点）
+                if (!string.IsNullOrEmpty(DescOf(n))) sp.Add(DescOf(n));
+                if (r != null && r.Count > 1) sp.Add(r.Count + " 个进程");
+                sp.Add(rt.Text);
+                if (ecoNames.Contains(n)) sp.Add("节能中");
+                menuSub.Text = string.Join(" · ", sp);
                 bool prot = Protected.Contains(n), svc = n.StartsWith("svc:");
                 menuFix.Text = btnPrimary.Text;
                 menuEco.Visible = EcoAllowed(n);
@@ -93,7 +98,8 @@ namespace WatchDog
                 menuWatchA.Visible = !prot;
                 menuWizard.Visible = !prot && !svc;
                 // 组里一项都不显示时，组标题也藏起来
-                foreach (KeyValuePair<ToolStripItem, ToolStripItem[]> g in menuGroups) g.Key.Available = g.Value.Any(x => x.Available);   // 菜单弹出前 Visible 读出来都是 false，要用 Available
+                foreach (KeyValuePair<ToolStripItem, ToolStripItem[]> g in menuGroups) g.Key.Available = g.Value.Any(x => x.Available);
+                FitMenuWidth();   // 菜单弹出前 Visible 读出来都是 false，要用 Available
             };
             lv.ContextMenuStrip = menu; lvG.ContextMenuStrip = menu;
         }
@@ -111,8 +117,29 @@ namespace WatchDog
         void SetHint(ToolStripMenuItem i, string hint)
         {
             MenuMeta m = (MenuMeta)i.Tag; m.Hint = hint;
-            int w = string.IsNullOrEmpty(hint) ? 0 : TextRenderer.MeasureText(hint, fCN).Width + 28;
-            i.Padding = new Padding(26, 3, w, 3);   // 左边 26 像素给图标
+            i.Padding = new Padding(0, 3, 0, 3);   // 宽度在菜单打开时按内容统一算（见 FitMenuWidth）
+        }
+        // 菜单宽度自己算：图标 34 + 文字 + 间隔 + 右边说明 + 边距，取所有显示的项里最宽的，所有项统一这个宽度
+        // （系统按自己的文字位置算宽度，不知道图标和说明是我们自己画的，窄的时候文字和说明会叠在一起）
+        void FitMenuWidth()
+        {
+            int need = 200;
+            foreach (ToolStripItem it in menu.Items)
+            {
+                if (!it.Available) continue;
+                MenuMeta m = it.Tag as MenuMeta;
+                int w;
+                if (m != null && !m.Header) w = 34 + TextRenderer.MeasureText(it.Text, fCN).Width + (string.IsNullOrEmpty(m.Hint) ? 0 : 28 + TextRenderer.MeasureText(m.Hint, fCN).Width) + 18;
+                else w = it.Margin.Horizontal + it.Padding.Horizontal + TextRenderer.MeasureText(it.Text, it.Font).Width + (it.Image != null ? 30 : 0) + 12;
+                need = Math.Max(need, w);
+            }
+            foreach (ToolStripItem it in menu.Items)
+            {
+                Size ps = it.GetPreferredSize(Size.Empty);
+                it.AutoSize = false;
+                ToolStripLabel lb = it as ToolStripLabel; if (lb != null) lb.TextAlign = ContentAlignment.MiddleLeft;   // 不自动大小以后标签默认居中，改回靠左
+                it.Size = new Size(need - it.Margin.Horizontal, ps.Height);
+            }
         }
         ToolStripItem Header(string text)
         {
@@ -148,7 +175,7 @@ namespace WatchDog
                     TextRenderer.DrawText(e.Graphics, e.Text, e.TextFont, new Rectangle(34, 0, e.Item.Width - 34, e.Item.Height), e.Item.Enabled ? Theme.Text : Theme.Disabled,
                         TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
                     if (!string.IsNullOrEmpty(meta.Hint))   // 右边说明：贴着菜单右边
-                        TextRenderer.DrawText(e.Graphics, meta.Hint, m.fCN, new Rectangle(0, 0, e.ToolStrip.Width - 14, e.Item.Height), Theme.Gray,
+                        TextRenderer.DrawText(e.Graphics, meta.Hint, m.fCN, new Rectangle(0, 0, e.Item.Width - 12, e.Item.Height), Theme.Gray,
                             TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
                     return;
                 }

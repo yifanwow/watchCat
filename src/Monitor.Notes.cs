@@ -37,7 +37,39 @@ namespace WatchDog
             string s;
             if (name == null) return null;
             if (notes.TryGetValue(name, out s)) return s;
-            return Desc.TryGetValue(name, out s) ? s : null;
+            if (Desc.TryGetValue(name, out s)) return s;
+            return AutoDesc(name);
+        }
+        // 内置说明里没有的程序：用 exe 自带的"文件说明"（比如 Photoshop → Adobe Photoshop 2025），服务用它的显示名。每个名字只查一次
+        Dictionary<string, string> autoDesc = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string AutoDesc(string name)
+        {
+            string s;
+            if (autoDesc.TryGetValue(name, out s)) return s;
+            try
+            {
+                if (name.StartsWith("svc:"))
+                {
+                    using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + name.Substring(4)))
+                        s = k == null ? null : k.GetValue("DisplayName") as string;
+                    if (s != null && s.StartsWith("@")) s = null;   // "@%SystemRoot%\...dll,-123" 这种要从资源里取，不管它
+                }
+                else
+                {
+                    string path = PathOf(name);
+                    if (path == null) return null;   // 进程刚退出 / 还没拿到：不记下来，下次再试
+                    if (System.IO.File.Exists(path))
+                    {
+                        System.Diagnostics.FileVersionInfo vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
+                        s = !string.IsNullOrWhiteSpace(vi.FileDescription) ? vi.FileDescription.Trim() : !string.IsNullOrWhiteSpace(vi.ProductName) ? vi.ProductName.Trim() : null;
+                    }
+                }
+                if (s != null && (s.Equals(name, StringComparison.OrdinalIgnoreCase) || s.Equals(name + ".exe", StringComparison.OrdinalIgnoreCase))) s = null;   // 说明就是程序名本身：没意义
+                if (s != null && s.Length > 40) s = s.Substring(0, 40) + "…";
+            }
+            catch { s = null; }
+            autoDesc[name] = s;
+            return s;
         }
         bool HasNote(string name) { return name != null && notes.ContainsKey(name); }
 
