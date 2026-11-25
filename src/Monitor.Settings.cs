@@ -85,7 +85,7 @@ namespace WatchDog
             groups.Add(new KeyValuePair<string[], List<SetRow>>(new[] { "外观", "切换后立即生效" }, new List<SetRow> {
                 new SetRow { Kind = "theme", Title = "界面主题", Sub = () => Theme.Name + "：" + Theme.Desc },
             }));
-            groups.Add(new KeyValuePair<string[], List<SetRow>>(new[] { "看板娘 Fegmi", "站在主窗口右边，发现问题时会说出来；可以拖动她换位置，右键有菜单" }, new List<SetRow> {
+            groups.Add(new KeyValuePair<string[], List<SetRow>>(new[] { "小助手 Fegmi", "站在主窗口右边，发现问题时会说出来；可以拖动她换位置，右键有菜单" }, new List<SetRow> {
                 new SetRow { Kind = "toggle", Title = "召唤 Fegmi", Sub = () => "关掉后她会去休息，数据照常记录", Get = () => petOn,
                     Toggle = () => { bool on = !petOn; if (pet != null) SetPetOn(on); else { petOn = on; WriteSetting("pet", on); } say(on ? "Fegmi 来了～" : "Fegmi 去休息了（数据照常记录）"); } },
                 new SetRow { Kind = "size", Title = "Fegmi 的大小", Sub = () => "现在 " + petScale.ToString("0.0") + " 倍（1.0 = 主窗口高度的 60%）" },

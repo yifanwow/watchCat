@@ -411,7 +411,7 @@ namespace WatchDog
         {
             if (selfTest || !LoadPetParts()) return;
             LoadPetSettings();
-            pet = new LayeredWindow("Fegmi · WatchCat 看板娘"); pet.Owner = this; pet.Cursor = Cursors.Hand;
+            pet = new LayeredWindow("Fegmi · WatchCat 小助手"); pet.Owner = this; pet.Cursor = Cursors.Hand;
             bubble = new LayeredWindow("Fegmi 说的话"); bubble.Owner = this; bubble.Cursor = Cursors.Hand;
             petTimer = new Timer(); petTimer.Interval = petClip ? 40 : 100;   // 序列帧每秒 12 帧，定时器要比它快才不丢帧
             petTimer.Tick += delegate { PetTick(); };
