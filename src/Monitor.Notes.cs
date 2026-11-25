@@ -36,7 +36,7 @@ namespace WatchDog
         {
             string s;
             if (name == null) return null;
-            if (notes.TryGetValue(name, out s)) return s;
+            if (!demoMode && notes.TryGetValue(name, out s)) return s;   // 演示截图时不显示自己写的备注
             if (Desc.TryGetValue(name, out s)) return s;
             return AutoDesc(name);
         }

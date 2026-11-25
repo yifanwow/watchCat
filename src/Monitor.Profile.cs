@@ -17,6 +17,9 @@ namespace WatchDog
         BufferedPanel profile;
         Bitmap avatar;                 // 缩到 128×128 后的头像，只有一张
         string userName = Environment.UserName;
+        // 演示模式（自测 --demo，给 README 截图用）：不显示自己的名字、头像和备注
+        internal bool demoMode;
+        internal void EnterDemoMode() { demoMode = true; userName = "WatchCat 用户"; Bitmap a = avatar; avatar = null; if (a != null) a.Dispose(); if (profile != null) profile.Invalidate(); }
         string osName = "", cpuName = "", gpuName = "", diskTxt = "";
         DateTime lastDiskInfo = DateTime.MinValue;
         const int ProfileH = 180, ProfileMini = 120, AvX = 14, AvY = 36, AvS = 72;   // 窗口矮时收起 CPU / 显卡 / 内存那几行

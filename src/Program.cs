@@ -187,6 +187,7 @@ namespace WatchDog
                 // 在屏幕外真实显示窗口，让所有控件都按正常流程创建和绘制
                 form.StartPosition = FormStartPosition.Manual; form.Location = new Point(-5000, -5000); form.ShowInTaskbar = false;
                 form.Show(); Application.DoEvents();
+                if (a.ContainsKey("demo")) form.EnterDemoMode();   // --demo：README 截图用，不显示名字、头像、备注
                 if (a.ContainsKey("ecoshow")) form.EcoMarkForSnapshot(Get(a, "ecoshow", ""));   // --ecoshow 名字：截图时显示节能叶子
                 if (a.ContainsKey("theme")) { form.PreviewTheme(Get(a, "theme", "")); Application.DoEvents(); }   // --theme capricorn：看另一个主题
                 if (a.ContainsKey("height")) { form.Height = int.Parse(Get(a, "height", "0")); Application.DoEvents(); }   // --height N：看不同窗口高度下的排版
