@@ -85,7 +85,7 @@ namespace WatchDog
                     form.Prepare(true);
                     form.StartTimer();
                     // 万一还是被 Windows 结束了（程序更新、卡住被关、重启后恢复应用），让 Windows 把它重新启动
-                    try { RegisterApplicationRestart("", 0); } catch { }
+                    if (form.AutoRestartOn()) try { RegisterApplicationRestart("", 0); } catch { }   // 设置里可以关掉
                     form.ListenForShow(show, exit);
                     Application.Run(form);
                 }
@@ -95,7 +95,9 @@ namespace WatchDog
         }
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-        static extern int RegisterApplicationRestart(string cmdLine, int flags);
+        internal static extern int RegisterApplicationRestart(string cmdLine, int flags);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        internal static extern int UnregisterApplicationRestart();
         [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
 

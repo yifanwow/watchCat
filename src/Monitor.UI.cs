@@ -25,7 +25,7 @@ namespace WatchDog
         static int Lx(int l) { return l == -1 ? 3 : Math.Max(0, Math.Min(2, l)); }   // 等级 -> 数组下标
 
         Font fCN, fCNb, fCNbig, fTagB, fNum, fNumBig, fNumS, fHead, fSmall, fMono;
-        SolidBrush bBg, bPanel, bRowA, bRowB, bDim, bSel, bRow2, bRow1, bDimLine, bAcc, bDeep, bCyanDim, bRed;
+        SolidBrush bBigRow, bBg, bPanel, bRowA, bRowB, bDim, bSel, bRow2, bRow1, bDimLine, bAcc, bDeep, bCyanDim, bRed;
         Brush bHaz;
         Pen pAcc, pAccDim, pCyan, pScan, pGrid, pCyanThin, pCyanDash, pPulse, pPulseGlow;
         SolidBrush[] bLv = new SolidBrush[4], bFill = new SolidBrush[4];
@@ -57,6 +57,7 @@ namespace WatchDog
             bDim = Keep(new SolidBrush(cDim)); bSel = Keep(new SolidBrush(cSel)); bRow2 = Keep(new SolidBrush(cRow2));
             bRow1 = Keep(new SolidBrush(cRow1)); bDimLine = Keep(new SolidBrush(cRedDim)); bAcc = Keep(new SolidBrush(cAccent));
             pAcc = Keep(new Pen(cAccent, 1)); pAccDim = Keep(new Pen(cRedDim, 1)); pCyan = Keep(new Pen(cCyan, 2));
+            bBigRow = Keep(new SolidBrush(Mix(cRowA, cBig, 0.16)));   // "占用大"那一行的底色：淡淡的橙
             pScan = Keep(new Pen(Color.FromArgb(12, cAccent), 1)); pGrid = Keep(new Pen(Color.FromArgb(150, cRedDim), 1));
             int[] lv = { 0, 1, 2, -1 };
             foreach (int l in lv)
@@ -855,7 +856,8 @@ namespace WatchDog
             return lv;
         }
         // ---------- 程序列表的每一格（两行卡片式）----------
-        const double BigMB = 2048;   // 没有问题、但占用超过 2 GB：稳定性标签显示"占用大"
+        const double BigMB = 2048;
+        static Color cBig { get { return Mix(cYellow, cRed, 0.42); } }   // 橙色："占用大"（不是问题，但值得注意）   // 没有问题、但占用超过 2 GB：稳定性标签显示"占用大"
         // 按量级取颜色：< a 灰（很小，不抢眼）、< b 正常白、< c 偏黄（较大）、< d 黄（大）、≥ d 偏红（很大，但不是"出问题"的红）
         Color MagColor(double v, double a, double b, double c, double d)
         {
@@ -863,7 +865,7 @@ namespace WatchDog
             if (v < b) return cText;
             if (v < c) return Mix(cText, cYellow, 0.45);
             if (v < d) return cYellow;
-            return Mix(cYellow, cRed, 0.45);
+            return cBig;
         }
         const int RowH = 48;
         double listMaxMB = 1;   // 列表里最大的内存，内存小横条按它算比例
@@ -871,11 +873,12 @@ namespace WatchDog
         {
             Graphics g = e.Graphics; Rectangle r = e.Bounds; ListViewItem it = e.Item;
             int lvl = it.Tag is int ? (int)it.Tag : -1;
-            Brush bg = it.Selected ? bSel : lvl == 2 ? bRow2 : lvl == 1 ? bRow1 : it.Index % 2 == 1 ? bRowB : bRowA;
-            g.FillRectangle(bg, r);
-            if (it.Index > 0) g.FillRectangle(bDimLine, r.X, r.Y, r.Width, 1);   // 行与行之间一条细线
             string name = it.Text; ProcRow pr; rows.TryGetValue(name, out pr);
             Rating rt; if (!ratings.TryGetValue(name, out rt)) rt = null;
+            bool bigRow = lvl <= 0 && pr != null && pr.PrivMB >= BigMB;   // 没问题但占用大：整行用橙色（标签、占用条、内存数字、底色）
+            Brush bg = it.Selected ? bSel : lvl == 2 ? bRow2 : lvl == 1 ? bRow1 : bigRow ? bBigRow : it.Index % 2 == 1 ? bRowB : bRowA;
+            g.FillRectangle(bg, r);
+            if (it.Index > 0) g.FillRectangle(bDimLine, r.X, r.Y, r.Width, 1);   // 行与行之间一条细线
             int y1 = r.Y + 4, y2 = r.Y + 22, lh = 18;   // 第一行 / 第二行（再往下是内存占用条）
             switch (e.ColumnIndex)
             {
@@ -906,7 +909,7 @@ namespace WatchDog
                     int bw = r.Right - tx - 10, by = r.Bottom - 6;
                     using (SolidBrush track = new SolidBrush(Color.FromArgb(34, cText))) g.FillRectangle(track, tx, by, bw, 3);   // 底槽用中性的浅灰，不和红色的"出问题"混
                     int fw = (int)Math.Round(bw * Math.Min(1, mb / listMaxMB));
-                    if (fw > 0) g.FillRectangle(bLv[Lx(Math.Max(0, Math.Max(rt != null ? rt.Level : 0, rl)))], tx, by, fw, 3);
+                    if (fw > 0) { int bl = Math.Max(rt != null ? rt.Level : 0, rl); if (bl <= 0 && bigRow) using (SolidBrush ob = new SolidBrush(cBig)) g.FillRectangle(ob, tx, by, fw, 3); else g.FillRectangle(bLv[Lx(Math.Max(0, bl))], tx, by, fw, 3); }
                     return;
                 }
                 case 1:
@@ -925,7 +928,7 @@ namespace WatchDog
                 {
                     // 内存数字：有问题时用稳定性的颜色（黄 / 红）；没问题时按量级：很小灰、一般白、大偏黄、很大黄
                     double mb = pr != null ? pr.PrivMB : 0;
-                    Color mc = rt != null && rt.Level >= 1 ? LevelColor(rt.Level) : MagColor(mb, 100, 1024, BigMB, 4096);
+                    Color mc = rt != null && rt.Level >= 1 ? LevelColor(rt.Level) : bigRow ? cBig : MagColor(mb, 100, 1024, BigMB, 4096);
                     Txt(g, string.Format("{0:N0} MB", mb), mb >= BigMB || (rt != null && rt.Level >= 1) ? fCNb : fCN, mc, r.X + 6, r.Y, r.Width - 14, r.Height, tfR);
                     return;
                 }
@@ -953,7 +956,7 @@ namespace WatchDog
                     Rectangle pill = new Rectangle(r.X + 8, r.Y + (r.Height - 22) / 2, Math.Min(r.Width - 16, ts.Width + 16), 22);
                     PointF[] poly = CutPoly(pill.X, pill.Y, pill.Width, pill.Height, 6);
                     g.SmoothingMode = SmoothingMode.AntiAlias;
-                    Color bigC = MagColor(BigMB, 100, 1024, BigMB, 4096);
+                    Color bigC = cBig;
                     if (ml >= 1) { using (SolidBrush b = new SolidBrush(Color.FromArgb(46, LevelColor(ml)))) g.FillPolygon(b, poly); using (Pen pe = new Pen(LevelColor(ml))) g.DrawPolygon(pe, poly); }
                     else if (big) { using (SolidBrush b = new SolidBrush(Color.FromArgb(24, bigC))) g.FillPolygon(b, poly); using (Pen pe = new Pen(Color.FromArgb(170, bigC))) g.DrawPolygon(pe, poly); }
                     else g.DrawPolygon(pAccDim, poly);

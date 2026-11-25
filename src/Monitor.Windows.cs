@@ -47,7 +47,7 @@ namespace WatchDog
             snapFile = file; snapPick = pick;
             switch (kind)
             {
-                case "rules": ShowRulesWindow(null); break;
+                case "rules": ShowRulesWindow(pick); break;
                 case "fixes": ShowFixesWindow(); break;
                 case "fixlog": ShowFixLogWindow(); break;
                 case "ignored": ShowIgnoredWindow(); break;
@@ -243,54 +243,149 @@ namespace WatchDog
             return o.Count == 0 ? "（这条规则没有设核对项）" : string.Join("；", o) + "。不对会补救一次（再启动服务 / 按原来的方式再启动程序）";
         }
 
+        // 规则窗口：上面是规则列表（两行一条：规则名 + 程序、状态标签、上限和现在用了多少、最近一次处理），
+        // 下面是选中规则的详情卡片：为什么会涨、怎么处理、设置（上限、空闲多久才动手、自动处理还是只提醒、启用还是关闭）
         void ShowRulesWindow(string pick)   // pick = 打开时选中的规则 id
         {
             rulesSig = ""; LoadRules();
-            const int w = 1100, h = 750;
+            const int w = 1100, h = 780, listTop = 70, listH = 368, rowH = 48;
+            int detTop = listTop + listH + 14;
             BufferedPanel body;
             using (Form f = NewWindow("RULES", "看门猫的规则", w, h, out body))
             {
                 List<string[]> log = ReadActionLog();
                 Rule cur = null;
+                bool editAuto = false, editOn = true;
+                // ---- 规则列表（两行一条）----
+                BufferedListView lv2 = new BufferedListView();
+                lv2.Bounds = new Rectangle(14, listTop, w - 28, listH); lv2.View = View.Details; lv2.FullRowSelect = true; lv2.HideSelection = false; lv2.MultiSelect = false;
+                lv2.OwnerDraw = true; lv2.BackColor = cRowA; lv2.ForeColor = cText; lv2.BorderStyle = BorderStyle.None; lv2.Font = fCN;
+                ImageList rh = new ImageList(); rh.ImageSize = new Size(1, rowH); lv2.SmallImageList = rh; lv2.Disposed += delegate { rh.Dispose(); };
+                foreach (object[] c in new[] { new object[] { "规则 / 程序", 360 }, new object[] { "状态", 120 }, new object[] { "上限", 190 }, new object[] { "空闲才动手", 150 }, new object[] { "最近一次", 230 } }) lv2.Columns.Add((string)c[0], (int)c[1]);
+                lv2.DrawColumnHeader += (s, e) =>
+                {
+                    e.Graphics.FillRectangle(bBg, e.Bounds);
+                    e.Graphics.FillRectangle(bAcc, e.Bounds.X, e.Bounds.Bottom - 2, e.Bounds.Width, 2);
+                    Txt(e.Graphics, e.Header.Text, fCNb, cAccent, e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 16, e.Bounds.Height);
+                };
+                lv2.DrawItem += delegate { };
+                lv2.DrawSubItem += (s, e) =>
+                {
+                    Graphics g = e.Graphics; Rectangle r = e.Bounds; Rule ru = (Rule)e.Item.Tag;
+                    string name = ru.Target ?? ru.Process;
+                    ProcRow pr = null; if (name != null) rows.TryGetValue(name, out pr);
+                    double now = pr != null ? pr.PrivMB : 0;
+                    bool over = ru.MinMB > 0 && now >= ru.MinMB;
+                    Brush bg = e.Item.Selected ? bSel : over && !ru.Disabled ? bRow1 : e.Item.Index % 2 == 1 ? bRowB : bRowA;
+                    g.FillRectangle(bg, r);
+                    if (e.Item.Index > 0) g.FillRectangle(bDimLine, r.X, r.Y, r.Width, 1);
+                    int y1 = r.Y + 5, y2 = r.Y + 24;
+                    switch (e.ColumnIndex)
+                    {
+                        case 0:
+                            if (e.Item.Selected) g.FillRectangle(bLv[0], r.X, r.Y + 4, 3, r.Height - 8);
+                            Bitmap ic = name != null ? GetIcon(name) : null;
+                            if (ic != null) { g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic; g.DrawImage(ic, r.X + 12, r.Y + 12, 24, 24); }
+                            else g.FillRectangle(bDim, r.X + 15, r.Y + 15, 18, 18);
+                            Txt(g, ru.Title, fCNb, ru.Disabled ? cGray : cText, r.X + 46, y1, r.Width - 54, 18);
+                            Txt(g, (name ?? "-") + (DescOf(name) != null ? " · " + DescOf(name) : ""), fCN, cGray, r.X + 46, y2, r.Width - 54, 18);
+                            break;
+                        case 1:
+                        {
+                            string st = RuleState(ru);
+                            Color c = ru.Disabled ? cGray : st == "自动处理" ? cCyan : cYellow;
+                            Size ts = TextRenderer.MeasureText(g, st, fCNb, new Size(200, 30), tfL);
+                            Rectangle pill = new Rectangle(r.X + 10, r.Y + (r.Height - 22) / 2, ts.Width + 16, 22);
+                            PointF[] poly = CutPoly(pill.X, pill.Y, pill.Width, pill.Height, 6);
+                            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                            using (SolidBrush b = new SolidBrush(Color.FromArgb(ru.Disabled ? 0 : 40, c))) g.FillPolygon(b, poly);
+                            using (Pen pe = new Pen(ru.Disabled ? cRedDim : c)) g.DrawPolygon(pe, poly);
+                            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+                            Txt(g, st, fCNb, c, pill.X, pill.Y, pill.Width, pill.Height, tfC);
+                            break;
+                        }
+                        case 2:
+                            Txt(g, RuleWhen(ru), fCN, cText, r.X + 10, y1, r.Width - 16, 18);
+                            if (ru.MinMB > 0)
+                            {
+                                Txt(g, pr != null ? string.Format("现在 {0:N0} MB", now) : "现在没在运行", fCN, over ? cYellow : cGray, r.X + 10, y2, r.Width - 16, 18);
+                                // 现在用了上限的多少：一条小横条
+                                int bw = r.Width - 28, fw = (int)(bw * Math.Min(1, now / ru.MinMB));
+                                using (SolidBrush tr = new SolidBrush(Color.FromArgb(34, cText))) g.FillRectangle(tr, r.X + 10, r.Bottom - 6, bw, 3);
+                                if (fw > 0) g.FillRectangle(over ? bLv[1] : bLv[0], r.X + 10, r.Bottom - 6, fw, 3);
+                            }
+                            break;
+                        case 3:
+                            Txt(g, RuleIdle(ru), fCN, cGray, r.X + 10, r.Y, r.Width - 16, r.Height);
+                            break;
+                        case 4:
+                        {
+                            string la = LastActionOf(ru.Id, log);
+                            if (string.IsNullOrEmpty(la)) { Txt(g, "还没处理过", fCN, cGray, r.X + 10, r.Y, r.Width - 16, r.Height); break; }
+                            string when = la.Length > 11 ? la.Substring(0, 11) : la, what = la.Length > 12 ? la.Substring(12) : "";
+                            Txt(g, when, fCN, cGray, r.X + 10, y1, r.Width - 16, 18);
+                            Txt(g, what, fCN, what.Contains("失败") ? LevelColor(2) : cCyan, r.X + 10, y2, r.Width - 16, 18);
+                            break;
+                        }
+                    }
+                };
+                lv2.ItemSelectionChanged += (s, e) => lv2.Invalidate(e.Item.Bounds);
+                lv2.HandleCreated += delegate
+                {
+                    Native.SetWindowTheme(lv2.Handle, "DarkMode_ItemsView", null);
+                    IntPtr hdr = Native.SendMessage(lv2.Handle, 0x101F, IntPtr.Zero, IntPtr.Zero);
+                    if (hdr != IntPtr.Zero) Native.SetWindowTheme(hdr, "DarkMode_ItemsView", null);
+                };
+                EventHandler fit = delegate
+                {
+                    int sum = 0; for (int i = 0; i < lv2.Columns.Count - 1; i++) sum += lv2.Columns[i].Width;
+                    int want = Math.Max(80, lv2.ClientSize.Width - sum - 2);
+                    if (lv2.Columns[lv2.Columns.Count - 1].Width != want) lv2.Columns[lv2.Columns.Count - 1].Width = want;
+                };
+                lv2.Resize += fit; lv2.HandleCreated += fit;
+                body.Controls.Add(lv2);
+
+                // ---- 详情卡片 ----
+                int fy = detTop + 150;   // 设置那一行的位置
                 body.Paint += (s, e) =>
                 {
-                    Txt(e.Graphics, "看门猫每 10 分钟在后台检查一次：程序超过上限时，按下面的规则处理。\"自动处理\"的规则只在你空闲时动手，处理完会核对是不是都恢复了。改动存在你自己的 rules.local.json，不改 rules.json。新加监控：右键程序 → 用看门猫监控。",
-                        fCN, cGray, 22, 40, w - 44, 36, tfW);
-                    if (cur == null) { Txt(e.Graphics, "在上面选一条规则查看和修改。", fCN, cGray, 22, 396, w - 44, 20); return; }
-                    Txt(e.Graphics, cur.Title, fCNbig, cCyan, 22, 392, w - 200, 24);
-                    Txt(e.Graphics, cur.Source == "公共" ? "公共规则" : cur.Source == "改过" ? "公共规则 · 你改过" : "你自己的规则", fCN, cAccent, w - 200, 396, 178, 20, tfR);
-                    Txt(e.Graphics, cur.Cause, fCN, cText, 22, 420, w - 44, 56, tfW);
-                    Txt(e.Graphics, "怎么处理：" + (cur.FixLabel.Length > 0 ? cur.FixLabel : "-") + "        处理后核对：" + VerifyText(cur), fCN, cGray, 22, 480, w - 44, 40, tfW);
-                    g_Line(e.Graphics, 22, 528, w - 44);
-                    Txt(e.Graphics, "超过多少 MB 时处理", fCN, cGray, 22, 540, 200, 18);
-                    Txt(e.Graphics, "空闲多少分钟才动手（0 = 随时）", fCN, cGray, 240, 540, 240, 18);
-                    Txt(e.Graphics, "超过上限时", fCN, cGray, 500, 540, 200, 18);
-                    Txt(e.Graphics, "这条规则", fCN, cGray, 720, 540, 200, 18);
+                    Graphics g = e.Graphics;
+                    Txt(g, "看门猫每 10 分钟检查一次：程序超过上限时，「自动处理」在你不用电脑时重启它，处理完核对是否恢复；「只提醒」只告诉你。新加监控：在主窗口右键程序。",
+                        fCN, cGray, 22, 40, w - 44, 22, tfL | TextFormatFlags.EndEllipsis);
+                    g.FillRectangle(bDeep, 14, detTop, w - 28, h - detTop - 70);
+                    g.FillRectangle(bAcc, 14, detTop, 3, h - detTop - 70);
+                    if (cur == null) { Txt(g, "在上面选一条规则，查看它为什么会涨、怎么处理，并修改设置。", fCN, cGray, 32, detTop + 16, w - 64, 20); return; }
+                    Txt(g, cur.Title, fCNbig, cCyan, 32, detTop + 12, w - 260, 26);
+                    Txt(g, cur.Source == "公共" ? "公共规则" : cur.Source == "改过" ? "公共规则 · 你改过" : "你自己的规则", fCNb, cAccent, w - 240, detTop + 16, 210, 20, tfR);
+                    Txt(g, "为什么会涨", fCNb, cAccent, 32, detTop + 46, 120, 18);
+                    Txt(g, cur.Cause, fCN, cText, 150, detTop + 46, w - 190, 40, tfW);
+                    Txt(g, "怎么处理", fCNb, cAccent, 32, detTop + 92, 120, 18);
+                    Txt(g, (cur.FixLabel.Length > 0 ? cur.FixLabel : "-") + "    ·    处理后核对：" + VerifyText(cur), fCN, cText, 150, detTop + 92, w - 190, 40, tfW);
+                    g.FillRectangle(bDimLine, 32, fy - 14, w - 64, 1);
+                    Txt(g, "上限（MB）", fCN, cGray, 32, fy, 150, 18);
+                    Txt(g, "空闲多少分钟才动手（0 = 随时）", fCN, cGray, 220, fy, 260, 18);
+                    Txt(g, "超过上限时", fCN, cGray, 520, fy, 200, 18);
+                    Txt(g, "这条规则", fCN, cGray, 800, fy, 200, 18);
                 };
-                BufferedListView lv2 = NewList(body, new Rectangle(14, 82, w - 28, 296),
-                    new object[,] { { "状态", 84 }, { "规则", 230 }, { "程序", 170 }, { "什么时候处理", 150 }, { "空闲才动手", 150 }, { "来源", 64 }, { "最近一次", 200 } },
-                    (it, col) =>
-                    {
-                        Rule r = it.Tag as Rule;
-                        if (col == 0) return r != null && r.Disabled ? cGray : it.SubItems[0].Text == "自动处理" ? cCyan : cYellow;
-                        if (col == 6) return it.SubItems[6].Text.Contains("失败") ? LevelColor(2) : cGray;
-                        return col == 1 ? cText : cGray;
-                    });
-                TextBox tbMB = NewBox(body, 22, 562, 190, ""), tbIdle = NewBox(body, 240, 562, 230, "");
-                bool editAuto = false, editOn = true;
-                Button bAuto = NewBtn(body, "", 500, 561, 200, null, false), bOn = NewBtn(body, "", 720, 561, 200, null, false);
+                TextBox tbMB = NewBox(body, 32, fy + 22, 160, ""), tbIdle = NewBox(body, 220, fy + 22, 200, "");
+                // 两组二选一按钮：选中的那个实心高亮
+                Button bAutoY = NewBtn(body, "自动处理", 520, fy + 21, 120, null, false), bAutoN = NewBtn(body, "只提醒", 646, fy + 21, 120, null, false);
+                Button bOnY = NewBtn(body, "启用", 800, fy + 21, 110, null, false), bOnN = NewBtn(body, "关闭", 916, fy + 21, 110, null, false);
+                Action<Button, bool, Color> seg = (b, on, c) => { b.BackColor = on ? Color.FromArgb(70, c) : cPanel; b.ForeColor = on ? c : cGray; b.FlatAppearance.BorderColor = on ? c : cRedDim; };
                 Action showToggles = delegate
                 {
-                    bAuto.Text = editAuto ? "● 自动处理" : "○ 只提醒，不动手"; bAuto.ForeColor = editAuto ? cCyan : cYellow;
-                    bOn.Text = editOn ? "● 启用" : "○ 已关闭"; bOn.ForeColor = editOn ? cCyan : cGray;
+                    seg(bAutoY, editAuto, cCyan); seg(bAutoN, !editAuto, cYellow);
+                    seg(bOnY, editOn, cCyan); seg(bOnN, !editOn, cGray);
                 };
-                bAuto.Click += delegate { editAuto = !editAuto; showToggles(); };
-                bOn.Click += delegate { editOn = !editOn; showToggles(); };
+                bAutoY.Click += delegate { editAuto = true; showToggles(); };
+                bAutoN.Click += delegate { editAuto = false; showToggles(); };
+                bOnY.Click += delegate { editOn = true; showToggles(); };
+                bOnN.Click += delegate { editOn = false; showToggles(); };
                 Button bSave = NewBtn(body, "保存修改", 22, h - 52, 150, null, true);
                 Button bReset = NewBtn(body, "恢复默认", 180, h - 52, 130, null, false);
                 NewBtn(body, "用记事本编辑（高级）", w - 22 - 180 - 108, h - 52, 180, delegate { EditRules(); }, false);
                 NewBtn(body, "关闭", w - 22 - 100, h - 52, 100, delegate { f.Close(); }, false);
-                Control[] editors = { tbMB, tbIdle, bAuto, bOn, bSave, bReset };
+                Control[] editors = { tbMB, tbIdle, bAutoY, bAutoN, bOnY, bOnN, bSave, bReset };
 
                 Action fill = delegate
                 {
@@ -298,7 +393,7 @@ namespace WatchDog
                     lv2.BeginUpdate(); lv2.Items.Clear();
                     foreach (Rule r in allRules)
                     {
-                        ListViewItem it = new ListViewItem(new[] { RuleState(r), r.Title, r.Target ?? r.Process ?? "-", RuleWhen(r), RuleIdle(r), r.Source, LastActionOf(r.Id, log) });
+                        ListViewItem it = new ListViewItem(new[] { r.Title, "", "", "", "" });
                         it.Tag = r;
                         lv2.Items.Add(it);
                         if (r.Id == keep) { it.Selected = true; cur = r; }
@@ -313,7 +408,7 @@ namespace WatchDog
                     tbMB.Enabled = cur.MinMB > 0 || cur.MinFileMB > 0;
                     tbIdle.Text = cur.IdleMin.ToString("0");
                     editAuto = cur.Auto && cur.FixType != "none"; editOn = !cur.Disabled;
-                    bAuto.Enabled = cur.FixType != "none";
+                    bAutoY.Enabled = cur.FixType != "none";
                     showToggles();
                     bReset.Text = cur.Source == "我的" ? "删除这条规则" : "恢复默认";
                     bReset.Enabled = cur.Source != "公共";
