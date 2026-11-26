@@ -255,7 +255,7 @@ namespace WatchDog
             };
         }
 
-        static readonly string[][] Links = { new[] { "YIFANOVO.COM", "https://yifanovo.com" }, new[] { "WATCHDOG.YIFANOVO.COM", "https://watchdog.yifanovo.com" } };
+        static readonly string[][] Links = { new[] { "YIFANOVO.COM", "https://yifanovo.com" }, new[] { "WATCHCAT.YIFANOVO.COM", "https://watchcat.yifanovo.com" } };
         List<object[]> linkRects = new List<object[]>();   // [x0, x1, url]
         string hoverLink;
         string LinkAt(Point p)

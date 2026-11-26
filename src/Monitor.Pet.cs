@@ -441,8 +441,11 @@ namespace WatchDog
                 if (petDragging)
                 {
                     petDragging = false;   // 拖完了：不清掉的话，改大小时会以为还在拖，一直不生效
-                    Point a = PetAnchor(PetSize(petH));
-                    SetPetOffset(new Point(petAt.X - a.X, petAt.Y - a.Y));
+                    if (MainShown())   // 主窗口开着：记住和主窗口的相对位置；在桌面上拖：只是换个地方站
+                    {
+                        Point a = PetAnchor(PetSize(petH));
+                        SetPetOffset(new Point(petAt.X - a.X, petAt.Y - a.Y));
+                    }
                     PlacePet();
                 }
                 else PetStatus();
@@ -451,11 +454,13 @@ namespace WatchDog
             {
                 string t = bubbleTarget;
                 HideBubble();
-                if (t != null && e.Button == MouseButtons.Left) SelectTarget(t);
+                if (t != null && e.Button == MouseButtons.Left) { if (!MainShown()) ShowFromTray(); SelectTarget(t); }
             };
 
             petMenu = new ContextMenuStrip(); petMenu.Renderer = menu.Renderer; petMenu.Font = fCN;
             MenuItem(petMenu, "Fegmi，说说现在的情况", delegate { PetStatus(); });
+            ToolStripMenuItem openMain = MenuItem(petMenu, "打开 WatchCat", delegate { ShowFromTray(); });
+            petMenu.Opening += delegate { openMain.Visible = !MainShown(); };
             MenuItem(petMenu, "回到默认位置（主窗口右边）", delegate { SetPetOffset(Point.Empty); PlacePet(); });
             MenuItem(petMenu, "让 Fegmi 先休息（设置里可以再召唤）", delegate { SetPetOn(false); });
             pet.ContextMenuStrip = petMenu;
@@ -472,15 +477,26 @@ namespace WatchDog
         int PetWantH()
         {
             Rectangle wa = Screen.FromControl(this).WorkingArea;
-            return Math.Min(wa.Height - 20, (int)(Math.Max(360, Height * 0.6) * petScale));
+            int mh = WindowState == FormWindowState.Minimized ? RestoreBounds.Height : Height;   // 最小化时 Height 是标题条的高度，要用还原后的高度
+            return Math.Min(wa.Height - 20, (int)(Math.Max(360, mh * 0.6) * petScale));
         }
         // 默认位置：主窗口右边、底部对齐
         Point PetAnchor(Size s) { return new Point(Right - 4, Bottom - s.Height); }
 
+        // 主窗口正常显示：她站在主窗口旁边、跟着走（Owner = 主窗口，叠在它上面）。
+        // 主窗口最小化 / 缩到托盘：她留在桌面原地，可以随便拖（这时的位置不存盘）；Owner 去掉，否则会跟着主窗口一起被藏起来
+        bool MainShown() { return Visible && WindowState != FormWindowState.Minimized && Left > -30000; }   // 最小化的一瞬间窗口会先被挪到 -32000
+        Rectangle PetScreen() { return Screen.FromPoint(new Point(petAt.X + PetSize(petH).Width / 2, petAt.Y + petH / 2)).WorkingArea; }   // 她所在的那块屏幕
+        void SetPetOwner(Form o)
+        {
+            if (pet.Owner != o) pet.Owner = o;
+            if (bubble.Owner != o) bubble.Owner = o;
+        }
+
         void PlacePet()
         {
             if (pet == null) return;
-            bool show = Visible && WindowState != FormWindowState.Minimized && PetOn();
+            bool show = PetOn() && !petBroken;
             if (!show)
             {
                 if (pet.Visible) pet.Hide();
@@ -498,9 +514,22 @@ namespace WatchDog
             }
             if (petH == 0) BuildPetLayers(PetWantH());
             Size sz = PetSize(petH);
-            Point a = PetAnchor(sz), o = PetOffset();
-            Rectangle wa = Screen.FromControl(this).WorkingArea;
-            int x = a.X + o.X, y = a.Y + o.Y;
+            bool docked = MainShown();
+            SetPetOwner(docked ? this : null);
+            int x, y; Rectangle wa;
+            if (docked)
+            {
+                Point a = PetAnchor(sz), o = PetOffset();
+                wa = Screen.FromControl(this).WorkingArea;
+                x = a.X + o.X; y = a.Y + o.Y;
+            }
+            else
+            {
+                // 留在桌面：她已经在屏幕上就不动；开机直接进托盘（还没出现过）就站在主屏幕右下角
+                wa = Screen.FromPoint(new Point(petAt.X + sz.Width / 2, petAt.Y + sz.Height / 2)).WorkingArea;
+                if (pet.Visible || petAt != Point.Empty) { x = petAt.X; y = petAt.Y; }
+                else { wa = Screen.PrimaryScreen.WorkingArea; x = wa.Right - sz.Width - 24; y = wa.Bottom - sz.Height; }
+            }
             x = Math.Max(wa.Left - sz.Width / 3, Math.Min(x, wa.Right - sz.Width));   // 最多藏进屏幕左边三分之一，右边不出屏幕
             y = Math.Max(wa.Top, Math.Min(y, wa.Bottom - sz.Height));
             petAt = petTestOffscreen ? new Point(-6000, -6000) : new Point(x, y);
@@ -546,23 +575,70 @@ namespace WatchDog
             {
                 int idx = ClipStep(petClock.Elapsed.TotalSeconds);
                 if (idx < 0) return;
-                string ck = clipNow + idx;
+                string ck = clipNow + idx + "|" + MemBarKey();
                 if (!force && ck == petLastKey) return;
                 petLastKey = ck;
                 DrawClipNow(pet.Surface, idx);
+                using (Graphics g = Graphics.FromImage(pet.Surface)) DrawMemBar(g, pet.Surface.Width, pet.Surface.Height);
                 pet.Push(petAt);
                 return;
             }
             PetPose p = PoseAt(petClock.Elapsed.TotalSeconds);
-            string key = p.Key();
+            string key = p.Key() + "|" + MemBarKey();
             if (!force && key == petLastKey) return;
             petLastKey = key;
             using (Graphics g = Graphics.FromImage(pet.Surface))
             {
                 g.Clear(Color.Transparent);
                 DrawPet(g, p);
+                DrawMemBar(g, pet.Surface.Width, pet.Surface.Height);
             }
             pet.Push(petAt);
+        }
+
+        // ---------- 脚边的内存血条：10 个小方块，亮几格 = 整机内存用了百分之几十；颜色和内存卡片一样（正常 / 偏高黄 / 紧张红） ----------
+        double petMemPct = -1; int petMemLvl;
+        int MemBarCells() { return petMemPct < 0 ? 0 : Math.Max(1, Math.Min(10, (int)Math.Round(petMemPct / 10))); }
+        string MemBarKey() { return MemBarCells() + "." + petMemLvl; }
+        void DrawMemBar(Graphics g, int w, int h)
+        {
+            if (petMemPct < 0) return;   // 还没测到内存
+            int cell = Math.Max(6, (int)Math.Round(w * 0.021)), gap = Math.Max(2, (int)Math.Round(cell * 0.25));
+            int x0 = (int)Math.Round(w * 0.022), y0 = h - (int)(PetPadC * PetScale(petH) * 0.6) - cell;   // 底边和鞋底差不多齐
+            int on = MemBarCells();
+            Color c = petMemLvl >= 2 ? cRed : petMemLvl == 1 ? cYellow : cCyan;
+            g.SmoothingMode = SmoothingMode.None; g.PixelOffsetMode = PixelOffsetMode.None;
+            using (SolidBrush outline = new SolidBrush(Color.FromArgb(235, 8, 6, 10)))
+            using (SolidBrush face = new SolidBrush(c))
+            using (SolidBrush top = new SolidBrush(Blend(c, Color.White, 0.45)))
+            using (SolidBrush side = new SolidBrush(Blend(c, Color.Black, 0.45)))
+            using (SolidBrush empty = new SolidBrush(Color.FromArgb(215, 24, 20, 28)))
+            using (SolidBrush emptyEdge = new SolidBrush(Color.FromArgb(150, c)))
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    int x = x0 + i * (cell + gap);
+                    g.FillRectangle(outline, x - 1, y0 - 1, cell + 2, cell + 2);   // 深色描边：放在什么颜色的桌面上都看得清
+                    if (i < on)
+                    {
+                        // 小正方体：正面 + 上沿亮一条 + 右边和下沿暗一条
+                        int b = Math.Max(1, cell / 5);
+                        g.FillRectangle(face, x, y0, cell, cell);
+                        g.FillRectangle(top, x, y0, cell, b);
+                        g.FillRectangle(side, x + cell - b, y0 + b, b, cell - b);
+                        g.FillRectangle(side, x, y0 + cell - b, cell - b, b);
+                    }
+                    else
+                    {
+                        g.FillRectangle(emptyEdge, x, y0, cell, cell);
+                        g.FillRectangle(empty, x + 1, y0 + 1, cell - 2, cell - 2);
+                    }
+                }
+            }
+        }
+        static Color Blend(Color a, Color b, double t)
+        {
+            return Color.FromArgb(255, (int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
         }
 
         void PetTick()
@@ -595,7 +671,7 @@ namespace WatchDog
             int lv; int.TryParse(verdict[1], out lv);
             petMood = Math.Max(0, lv);
             HashSet<string> now = new HashSet<string>(issues.Where(i => i.Key != null && i.Level >= 1).Select(i => i.Key));
-            if (!PetOn() || !Visible || !pet.Visible) { petSpoken = now; return; }   // 她还没出来：先不说，招呼留到出来以后
+            if (!PetOn() || !pet.Visible) { petSpoken = now; return; }   // 她还没出来：先不说，招呼留到出来以后
             if (!petGreeted)
             {
                 petGreeted = true; petSpoken = now;
@@ -679,7 +755,7 @@ namespace WatchDog
         float PetHeadX() { return petAt.X + PetPt(245, 0, PetScale(petH)).X; }
         int BubbleX(int w)
         {
-            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            Rectangle wa = PetScreen();
             return Math.Max(wa.Left, Math.Min(wa.Right - w, (int)(PetHeadX() - w * 0.62f)));
         }
         void PlaceBubble()
@@ -688,7 +764,7 @@ namespace WatchDog
             int w = bubble.Surface.Width, h = bubble.Surface.Height;
             float k = PetScale(petH);
             int y = petAt.Y + (int)PetPt(0, 96, k).Y - h + (int)(10 * k);   // 底边落在帽子顶上
-            Rectangle wa = Screen.FromControl(this).WorkingArea;
+            Rectangle wa = PetScreen();
             Point at = new Point(BubbleX(w), Math.Max(wa.Top, y));
             if (bubble.Visible && bubble.Location != at) bubble.Location = at;
             else if (!bubble.Visible) bubble.Bounds = new Rectangle(at, new Size(w, h));
@@ -698,6 +774,7 @@ namespace WatchDog
         void PetThemeChanged()
         {
             if (bubble != null && bubble.Visible) { RenderBubble(); bubble.Push(bubble.Location); }
+            petLastKey = "";   // 血条按新主题的颜色重画
         }
 
         void DisposePet()
@@ -732,6 +809,12 @@ namespace WatchDog
             petGreeted = true;   // 不打招呼，免得气泡出现在屏幕上
             petOn = false; PlacePet(); m("启动（关着）");
             petOn = true; PlacePet(); m("召唤（待机）");
+            // 血条截图：62%（正常）和 91%（紧张）各一张
+            foreach (double pc in new[] { 62.0, 91.0 })
+            {
+                petMemPct = pc; petMemLvl = pc >= 85 ? 2 : 0; RenderPet(true);
+                using (Bitmap shot = new Bitmap(pet.Surface)) shot.Save(Path.ChangeExtension(file, null) + "-bar" + (int)pc + ".png", ImageFormat.Png);
+            }
             Action loadAll = () => { foreach (string n in ClipNames.Skip(1)) { ClipData c = BuildClipData(n, petH); if (c != null) clips[n] = c; } clipBytes = clips.Values.Sum(x => x.Bytes); };
             loadAll(); m("五段全载入");
             double t = petClock.Elapsed.TotalSeconds;

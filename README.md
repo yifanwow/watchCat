@@ -46,4 +46,4 @@
 
 需要 Windows 10 / 11。所有记录都只保存在本机，不上传。
 详细说明（评级规则、修复原理、规则格式）见 [docs/GUIDE.md](docs/GUIDE.md)。
-官网：[watchdog.yifanovo.com](https://watchdog.yifanovo.com)
+官网：[watchcat.yifanovo.com](https://watchcat.yifanovo.com)

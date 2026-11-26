@@ -34,7 +34,7 @@ foreach ($clip in 'idle', 'wave', 'talk', 'worried', 'happy') {
 
 @"
 WatchDog v$Version  —  Windows 内存泄漏"体检 + 修复"工具
-https://watchdog.yifanovo.com
+https://watchcat.yifanovo.com
 
 1. 把整个文件夹解压到一个固定的位置（比如 D:\Tools\WatchDog），以后不要再挪：
    看门狗的计划任务会记住这个位置。

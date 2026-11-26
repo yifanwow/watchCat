@@ -77,6 +77,7 @@ namespace WatchDog
             double commitGB = (m.ullTotalPageFile - m.ullAvailPageFile) / 1073741824.0, limitGB = m.ullTotalPageFile / 1073741824.0;
             double worst = Math.Max(pct, 100 * commitGB / limitGB);
             int lvl = worst < 70 ? 0 : worst < 85 ? 1 : 2;
+            petMemPct = pct; petMemLvl = lvl;   // Fegmi 脚边的内存血条
             SetCard(cardMem, string.Format("{0:N1} / {1:N0} GB", usedGB, totalGB), string.Format("{0}  {1:N0}%", new[] { "正常", "偏高", "紧张" }[lvl], pct), lvl,
                 string.Format("已提交 {0:N1} / {1:N0} GB（含虚拟内存）", commitGB, limitGB), pct);
             Record("sys:mem", usedGB, nowU);
