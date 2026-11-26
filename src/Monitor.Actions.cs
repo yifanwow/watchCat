@@ -367,8 +367,19 @@ namespace WatchDog
         }
         void FixSelected()
         {
-            Hit hit = null; if (selected != null) hitByTarget.TryGetValue(selected, out hit);
+            Hit hit = selected != null ? FixHitFor(selected) : null;
             if (hit != null) ApplyFix(hit, false); else RestartTarget(selected, false);
+        }
+        // 这个程序有专项修复（规则里有修复方法）：不管有没有超过上限，都按专项修复的方式处理，而不是简单重启。
+        // 比如华硕灯效服务：重启后还要让奥创中心把灯效脚本重新下发，否则灯会停在默认效果
+        Hit FixHitFor(string name)
+        {
+            if (name == null) return null;
+            Hit h; if (hitByTarget.TryGetValue(name, out h) && h.Rule.FixType != "none") return h;
+            Rule r = rules.FirstOrDefault(x => x.FixType != "none" && (x.Process == name || x.Target == name) && IsIgnored("rule:" + x.Id) == null);
+            if (r == null) return null;
+            h = new Hit(); h.Rule = r; h.Target = r.Target ?? name; h.Why = "有专项修复";
+            return h;
         }
         void KillTarget(string name)
         {

@@ -596,15 +596,17 @@ namespace WatchDog
             pet.Push(petAt);
         }
 
-        // ---------- 脚边的内存血条：10 个小方块，亮几格 = 整机内存用了百分之几十；颜色和内存卡片一样（正常 / 偏高黄 / 紧张红） ----------
+        // ---------- 内存血条：10 个小方块（竖着，在她左肩外侧），亮几格 = 整机内存用了百分之几十；颜色和内存卡片一样（正常 / 偏高黄 / 紧张红） ----------
         double petMemPct = -1; int petMemLvl;
         int MemBarCells() { return petMemPct < 0 ? 0 : Math.Max(1, Math.Min(10, (int)Math.Round(petMemPct / 10))); }
         string MemBarKey() { return MemBarCells() + "." + petMemLvl; }
         void DrawMemBar(Graphics g, int w, int h)
         {
             if (petMemPct < 0) return;   // 还没测到内存
-            int cell = Math.Max(6, (int)Math.Round(w * 0.021)), gap = Math.Max(2, (int)Math.Round(cell * 0.25));
-            int x0 = (int)Math.Round(w * 0.022), y0 = h - (int)(PetPadC * PetScale(petH) * 0.6) - cell;   // 底边和鞋底差不多齐
+            // 竖着放在她左肩外侧、帽檐下面（可以压住一点披风），从下往上亮
+            int cell = Math.Max(6, (int)Math.Round(h * 0.0125)), gap = Math.Max(2, (int)Math.Round(cell * 0.25));
+            int total = 10 * cell + 9 * gap;
+            int x0 = (int)Math.Round(w * 0.216) - cell / 2, yBottom = (int)Math.Round(h * 0.306) + total / 2 - cell;   // 最下面一格的上沿
             int on = MemBarCells();
             Color c = petMemLvl >= 2 ? cRed : petMemLvl == 1 ? cYellow : cCyan;
             g.SmoothingMode = SmoothingMode.None; g.PixelOffsetMode = PixelOffsetMode.None;
@@ -617,7 +619,7 @@ namespace WatchDog
             {
                 for (int i = 0; i < 10; i++)
                 {
-                    int x = x0 + i * (cell + gap);
+                    int x = x0, y0 = yBottom - i * (cell + gap);
                     g.FillRectangle(outline, x - 1, y0 - 1, cell + 2, cell + 2);   // 深色描边：放在什么颜色的桌面上都看得清
                     if (i < on)
                     {

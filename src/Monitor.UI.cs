@@ -1452,6 +1452,7 @@ namespace WatchDog
         void UpdateDetailButtons()
         {
             Hit hit = null; if (selected != null) hitByTarget.TryGetValue(selected, out hit);
+            if (hit == null) hit = FixHitFor(selected);   // 没超上限但有专项修复：按钮也写专项修复的做法
             string t = hit != null ? (hit.Rule.FixType == "none" ? "查看建议：" : "修复：") + hit.Rule.FixLabel
                 : selected != null && selected.StartsWith("svc:") ? "重启这个服务" : "重启这个程序";
             SetText(btnPrimary, t);

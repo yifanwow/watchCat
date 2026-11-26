@@ -37,8 +37,14 @@ namespace WatchDog
                 if (seen.Contains(r.Name) || Protected.Contains(r.Name)) continue;
                 // 浏览器（重启会关掉所有网页）、上次重启后用户说不正常的：一键修复不动它们
                 if (IsBrowser(r.Name) || FeedbackOf(r.Name) == "bad") continue;
-                Rating rt; if (ratings.TryGetValue(r.Name, out rt) && (rt.Text == "疑似泄漏" || rt.Text == "持续泄漏") && rt.Level >= 2) { todo.Add(new KeyValuePair<string, object>("重启 " + r.Name + "（" + rt.Text + "）", r.Name)); seen.Add(r.Name); continue; }
-                if (ResLevel(r.Name) >= 2 && !r.Name.StartsWith("svc:")) { todo.Add(new KeyValuePair<string, object>("重启 " + r.Name + "（句柄 / 图形资源）", r.Name)); seen.Add(r.Name); }
+                string why = null;
+                Rating rt; if (ratings.TryGetValue(r.Name, out rt) && (rt.Text == "疑似泄漏" || rt.Text == "持续泄漏") && rt.Level >= 2) why = rt.Text;
+                else if (ResLevel(r.Name) >= 2 && !r.Name.StartsWith("svc:")) why = "句柄 / 图形资源";
+                if (why == null) continue;
+                // 有专项修复的（还没到上限，所以上面没算进去）：用专项修复的做法，不是简单重启
+                Hit fx = FixHitFor(r.Name);
+                if (fx != null) { if (!seen.Contains(fx.Target ?? "")) todo.Add(new KeyValuePair<string, object>(fx.Rule.FixLabel + "（" + why + "）", fx)); seen.Add(fx.Target ?? ""); seen.Add(r.Name); continue; }
+                todo.Add(new KeyValuePair<string, object>("重启 " + r.Name + "（" + why + "）", r.Name)); seen.Add(r.Name);
             }
             return todo;
         }
