@@ -1371,14 +1371,18 @@ namespace WatchDog
         void AnalyzeSelected()
         {
             if (selected == null) { Say("先在列表里选一个程序。"); return; }
-            ProcRow r; string arg = selected.StartsWith("svc:") && rows.TryGetValue(selected, out r) ? "-Id " + r.Pid : "-Name \"" + selected + "\"";
-            if (RunElevated("Analyze-Leak.ps1", arg + " -Open")) ReloadSoon(70);
+            if (RunAdmin("Analyze-Leak.ps1", TargetArgs(selected))) ReloadSoon(70);
         }
         void CaptureSelected()
         {
             if (selected == null) { Say("先在列表里选一个程序。"); return; }
-            ProcRow r; string arg = selected.StartsWith("svc:") && rows.TryGetValue(selected, out r) ? "-Id " + r.Pid : "-Name \"" + selected + "\"";
-            if (RunElevated("Capture-Handles.ps1", arg + " -Open")) ReloadSoon(15);
+            if (RunAdmin("Capture-Handles.ps1", TargetArgs(selected))) ReloadSoon(15);
+        }
+        // 服务按进程号找，普通程序按名字找；做完打开结果
+        Dictionary<string, object> TargetArgs(string name)
+        {
+            ProcRow r;
+            return name.StartsWith("svc:") && rows.TryGetValue(name, out r) ? A("Id", r.Pid.ToString(), "Open", true) : A("Name", name, "Open", true);
         }
         void OpenIncident(string name)
         {

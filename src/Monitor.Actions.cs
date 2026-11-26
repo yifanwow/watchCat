@@ -300,6 +300,41 @@ namespace WatchDog
         {
             StartShell("powershell.exe", string.Format("-NoProfile -ExecutionPolicy Bypass -File \"{0}\" {1}", Path.Combine(ToolDir, file), args));
         }
+        // ---- 需要管理员权限的事 ----
+        // 装了后台代办任务「WatchCatFix」（Install-Watchdog.ps1 一起装，只确认一次管理员权限）：写一张请求单到 data\queue\，
+        // 启动这个任务，由 Run-Queued.ps1 以管理员权限执行，不再弹确认窗口。没装：和以前一样弹确认窗口。
+        // 请求单里是「脚本名 + 参数名 → 值」，Run-Queued.ps1 只认白名单里的脚本和参数（两边的名单要一致）
+        static readonly Dictionary<string, string[]> AdminScripts = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase) {
+            { "Restart-ServiceHard.ps1", new[] { "Name" } }, { "Restart-Group.ps1", new[] { "StepsB64", "Quiet" } },
+            { "Restart-Aura.ps1", new[] { "Quiet" } }, { "Restart-GHub.ps1", new[] { "Quiet" } }, { "Restart-SteamWeb.ps1", new[] { "Quiet" } },
+            { "Fix-NvTopps.ps1", new[] { "Quiet" } }, { "Analyze-Leak.ps1", new[] { "Name", "Id", "Open" } }, { "Capture-Handles.ps1", new[] { "Name", "Id", "Reason", "Open" } } };
+        bool fixTaskInstalled;
+        string AdminNote { get { return fixTaskInstalled ? "" : "（需要管理员权限，会弹出确认窗口）"; } }
+        static Dictionary<string, object> A(params object[] kv)
+        {
+            Dictionary<string, object> d = new Dictionary<string, object>();
+            for (int i = 0; i + 1 < kv.Length; i += 2) d[(string)kv[i]] = kv[i + 1];
+            return d;
+        }
+        bool RunAdmin(string file, Dictionary<string, object> args)
+        {
+            string[] ok;
+            if (fixTaskInstalled && AdminScripts.TryGetValue(file, out ok) && args.Keys.All(k => ok.Contains(k)))
+            {
+                string f = null;
+                try
+                {
+                    string dir = Path.Combine(ToolDir, "data", "queue"); Directory.CreateDirectory(dir);
+                    f = Path.Combine(dir, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N").Substring(0, 6) + ".json");
+                    Json.WriteFile(f + ".tmp", A("script", file, "args", args));
+                    File.Move(f + ".tmp", f);   // 写完整了再改名，代办任务不会读到半张单子
+                    if (RunTask("WatchCatFix")) return true;
+                }
+                catch { }
+                try { if (f != null && File.Exists(f)) File.Delete(f); } catch { }
+            }
+            return RunElevated(file, string.Join(" ", args.Select(kv => kv.Value is bool ? ((bool)kv.Value ? "-" + kv.Key : "") : "-" + kv.Key + " \"" + kv.Value + "\"")));
+        }
         bool RunElevated(string file, string args)
         {
             try
@@ -332,16 +367,16 @@ namespace WatchDog
             if (name.StartsWith("svc:"))
             {
                 string svc = name.Substring(4);
-                if (!noAsk && !Ask("将重启系统服务 " + svc + "（需要管理员权限，会弹出确认窗口）。确定吗？")) return false;
-                bool ok = RunElevated("Restart-ServiceHard.ps1", "-Name " + svc); ReloadSoon(8); return ok;
+                if (!noAsk && !Ask("将重启系统服务 " + svc + AdminNote + "。确定吗？")) return false;
+                bool ok = RunAdmin("Restart-ServiceHard.ps1", A("Name", svc)); ReloadSoon(8); return ok;
             }
             if (Protected.Contains(name)) { Say(name + " 是系统关键进程，不能在这里重启。"); return false; }
             // 这个程序其实是一个服务（比如 CorsairCpuIdService、ROG Live Service）：按服务重启，直接结束进程会因权限失败，结束了也不会按服务重新启动
             ProcRow pr; string svcName = rows.TryGetValue(name, out pr) && pr.Count == 1 ? Native.ServiceOfPid(pr.Pid) : null;
             if (svcName != null)
             {
-                if (!noAsk && !Ask(string.Format("{0} 是系统服务「{1}」，将重启这个服务（需要管理员权限，会弹出确认窗口）。确定吗？", name, svcName))) return false;
-                bool ok = RunElevated("Restart-ServiceHard.ps1", "-Name \"" + svcName + "\""); ReloadSoon(8); return ok;
+                if (!noAsk && !Ask(string.Format("{0} 是系统服务「{1}」，将重启这个服务{2}。确定吗？", name, svcName, AdminNote))) return false;
+                bool ok = RunAdmin("Restart-ServiceHard.ps1", A("Name", svcName)); ReloadSoon(8); return ok;
             }
             // 没有专项规则的程序：先试最小的范围，按原来的方式重新打开，核对它回来了（Monitor.SmartFix.cs）
             return SmartRestart(name, noAsk);
@@ -354,12 +389,14 @@ namespace WatchDog
             {
                 case "restartProcess": return RestartTarget(r.Process, noAsk);
                 case "restartService":
-                    if (!noAsk && !Ask(string.Format("{0}\n\n{1}\n\n将执行：{2}（需要管理员权限）。确定吗？", r.Title, r.Cause, r.FixLabel))) return false;
-                    { bool ok = RunElevated("Restart-ServiceHard.ps1", "-Name " + r.FixService); ReloadSoon(8); return ok; }
+                    if (!noAsk && !Ask(string.Format("{0}\n\n{1}\n\n将执行：{2}{3}。确定吗？", r.Title, r.Cause, r.FixLabel, AdminNote))) return false;
+                    { bool ok = RunAdmin("Restart-ServiceHard.ps1", A("Name", r.FixService)); ReloadSoon(8); return ok; }
                 case "restartGroup":
                     return RunGroup(Json.Objects(Json.Obj(r.Raw, "fix").ContainsKey("steps") ? Json.Obj(r.Raw, "fix")["steps"] : null), r.Title + "\n\n" + r.Cause, noAsk, null);
                 case "script":
-                    if (!noAsk && !Ask(string.Format("{0}\n\n{1}\n\n将执行：{2}（需要管理员权限）。确定吗？", r.Title, r.Cause, r.FixLabel))) return false;
+                    if (!noAsk && !Ask(string.Format("{0}\n\n{1}\n\n将执行：{2}{3}。确定吗？", r.Title, r.Cause, r.FixLabel, AdminNote))) return false;
+                    // 专项修复脚本：在代办白名单里就交给后台代办（不弹窗）；新规则带来的其他脚本照旧（脚本自己请求管理员权限）
+                    if (AdminScripts.ContainsKey(r.FixScript)) { bool ok2 = RunAdmin(r.FixScript, A("Quiet", true)); ReloadSoon(8); return ok2; }
                     RunTool(r.FixScript, "-Quiet"); ReloadSoon(8); return true;
                 default:
                     Say(string.Format("{0}\n\n{1}\n\n建议：{2}", r.Title, r.Cause, r.FixLabel)); return false;

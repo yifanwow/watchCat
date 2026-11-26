@@ -327,9 +327,9 @@ namespace WatchDog
         {
             if (steps.Count == 0) return false;
             bool svc = steps.Any(s => Json.Str(s, "service") != null);
-            if (!noAsk && !Ask(what + "\n\n将按顺序重启：" + StepsText(steps) + (svc ? "\n（有系统服务，需要管理员权限，会弹出确认窗口）" : "") + "\n\n相关程序里没保存的内容可能会丢失。确定吗？")) return false;
+            if (!noAsk && !Ask(what + "\n\n将按顺序重启：" + StepsText(steps) + (svc && !fixTaskInstalled ? "\n（有系统服务，需要管理员权限，会弹出确认窗口）" : "") + "\n\n相关程序里没保存的内容可能会丢失。确定吗？")) return false;
             string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(Json.Write(steps)));
-            if (svc) { if (!RunElevated("Restart-Group.ps1", "-StepsB64 " + b64)) return false; }
+            if (svc) { if (!RunAdmin("Restart-Group.ps1", A("StepsB64", b64))) return false; }
             else RunTool("Restart-Group.ps1", "-StepsB64 " + b64);
             string[] procs = steps.Select(s => Json.Str(s, "process")).Where(n => n != null).ToArray();
             string[] svcs = steps.Select(s => Json.Str(s, "service")).Where(n => n != null).ToArray();

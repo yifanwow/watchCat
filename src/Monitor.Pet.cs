@@ -596,45 +596,40 @@ namespace WatchDog
             pet.Push(petAt);
         }
 
-        // ---------- 内存血条：10 个小方块（竖着，在她左肩外侧），亮几格 = 整机内存用了百分之几十；颜色和内存卡片一样（正常 / 偏高黄 / 紧张红） ----------
+        // ---------- 内存血条：10 个小方块（竖着，在她左肩外侧），亮几格 = 整机内存用了百分之几十 ----------
+        // 每格红色边框；填充色跟着内存走：一半以下绿，往上慢慢变黄，85% 以上变红（不跟主题）
         double petMemPct = -1; int petMemLvl;
         int MemBarCells() { return petMemPct < 0 ? 0 : Math.Max(1, Math.Min(10, (int)Math.Round(petMemPct / 10))); }
-        string MemBarKey() { return MemBarCells() + "." + petMemLvl; }
+        string MemBarKey() { return MemBarCells() + "." + (int)(petMemPct / 2.5); }
+        static readonly Color BarGreen = Color.FromArgb(70, 235, 120), BarYellow = Color.FromArgb(250, 210, 60), BarRed = Color.FromArgb(245, 50, 65);
+        static Color MemBarColor(double pct)
+        {
+            if (pct <= 50) return BarGreen;
+            if (pct <= 72) return Blend(BarGreen, BarYellow, (pct - 50) / 22);
+            if (pct <= 88) return Blend(BarYellow, BarRed, (pct - 72) / 16);
+            return BarRed;
+        }
         void DrawMemBar(Graphics g, int w, int h)
         {
             if (petMemPct < 0) return;   // 还没测到内存
-            // 竖着放在她左肩外侧、帽檐下面（可以压住一点披风），从下往上亮
-            int cell = Math.Max(6, (int)Math.Round(h * 0.0125)), gap = Math.Max(2, (int)Math.Round(cell * 0.25));
-            int total = 10 * cell + 9 * gap;
-            int x0 = (int)Math.Round(w * 0.216) - cell / 2, yBottom = (int)Math.Round(h * 0.306) + total / 2 - cell;   // 最下面一格的上沿
+            // 竖着放在她左肩外侧、帽檐下面（可以压住一点披风），从下往上亮；每格是扁的长方块，平涂，格子之间留空
+            int cw = Math.Max(8, (int)Math.Round(h * 0.016)), ch = Math.Max(3, (int)Math.Round(cw * 0.5)), gap = Math.Max(3, (int)Math.Round(ch * 0.9));
+            int total = 10 * ch + 9 * gap;
+            int x0 = (int)Math.Round(w * 0.216) - cw / 2, yBottom = (int)Math.Round(h * 0.306) + total / 2 - ch;   // 最下面一格的上沿
             int on = MemBarCells();
-            Color c = petMemLvl >= 2 ? cRed : petMemLvl == 1 ? cYellow : cCyan;
+            Color c = MemBarColor(petMemPct);
             g.SmoothingMode = SmoothingMode.None; g.PixelOffsetMode = PixelOffsetMode.None;
-            using (SolidBrush outline = new SolidBrush(Color.FromArgb(235, 8, 6, 10)))
+            using (SolidBrush shade = new SolidBrush(Color.FromArgb(190, 8, 6, 10)))
+            using (SolidBrush frame = new SolidBrush(BarRed))
             using (SolidBrush face = new SolidBrush(c))
-            using (SolidBrush top = new SolidBrush(Blend(c, Color.White, 0.45)))
-            using (SolidBrush side = new SolidBrush(Blend(c, Color.Black, 0.45)))
-            using (SolidBrush empty = new SolidBrush(Color.FromArgb(215, 24, 20, 28)))
-            using (SolidBrush emptyEdge = new SolidBrush(Color.FromArgb(150, c)))
+            using (SolidBrush empty = new SolidBrush(Color.FromArgb(225, 22, 16, 22)))
             {
                 for (int i = 0; i < 10; i++)
                 {
-                    int x = x0, y0 = yBottom - i * (cell + gap);
-                    g.FillRectangle(outline, x - 1, y0 - 1, cell + 2, cell + 2);   // 深色描边：放在什么颜色的桌面上都看得清
-                    if (i < on)
-                    {
-                        // 小正方体：正面 + 上沿亮一条 + 右边和下沿暗一条
-                        int b = Math.Max(1, cell / 5);
-                        g.FillRectangle(face, x, y0, cell, cell);
-                        g.FillRectangle(top, x, y0, cell, b);
-                        g.FillRectangle(side, x + cell - b, y0 + b, b, cell - b);
-                        g.FillRectangle(side, x, y0 + cell - b, cell - b, b);
-                    }
-                    else
-                    {
-                        g.FillRectangle(emptyEdge, x, y0, cell, cell);
-                        g.FillRectangle(empty, x + 1, y0 + 1, cell - 2, cell - 2);
-                    }
+                    int y0 = yBottom - i * (ch + gap);
+                    g.FillRectangle(shade, x0 - 2, y0 - 2, cw + 4, ch + 4);   // 外面一圈深色：放在什么颜色的桌面上都看得清
+                    g.FillRectangle(frame, x0 - 1, y0 - 1, cw + 2, ch + 2);   // 红框
+                    g.FillRectangle(i < on ? face : empty, x0, y0, cw, ch);
                 }
             }
         }
@@ -812,9 +807,9 @@ namespace WatchDog
             petOn = false; PlacePet(); m("启动（关着）");
             petOn = true; PlacePet(); m("召唤（待机）");
             // 血条截图：62%（正常）和 91%（紧张）各一张
-            foreach (double pc in new[] { 62.0, 91.0 })
+            foreach (double pc in new[] { 40.0, 70.0, 91.0 })
             {
-                petMemPct = pc; petMemLvl = pc >= 85 ? 2 : 0; RenderPet(true);
+                petMemPct = pc; petMemLvl = pc >= 85 ? 2 : 0; RenderPet(true);   // 62 偏黄绿，91 红
                 using (Bitmap shot = new Bitmap(pet.Surface)) shot.Save(Path.ChangeExtension(file, null) + "-bar" + (int)pc + ".png", ImageFormat.Png);
             }
             Action loadAll = () => { foreach (string n in ClipNames.Skip(1)) { ClipData c = BuildClipData(n, petH); if (c != null) clips[n] = c; } clipBytes = clips.Values.Sum(x => x.Bytes); };
