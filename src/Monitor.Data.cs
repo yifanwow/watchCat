@@ -773,7 +773,7 @@ namespace WatchDog
             if (icons.Count >= MaxIcons)   // 上限：满了就整体释放重来
             {
                 foreach (Bitmap b in icons.Values) if (b != null) b.Dispose();
-                icons.Clear();
+                icons.Clear(); fallbackIcons.Clear();
             }
             bmp = null;
             ProcRow r;
@@ -787,9 +787,14 @@ namespace WatchDog
             }
             {
                 if (path != null && File.Exists(path))
-                    try { using (Icon ico = Icon.ExtractAssociatedIcon(path)) bmp = ico.ToBitmap(); }   // 图标句柄立即释放，只留位图
-                    catch { bmp = null; }
+                {
+                    if (HasOwnIcon(path))
+                        try { using (Icon ico = Icon.ExtractAssociatedIcon(path)) bmp = ico.ToBitmap(); }   // 图标句柄立即释放，只留位图
+                        catch { bmp = null; }
+                    else bmp = AppxLogo(path);   // exe 里没图标：商店应用从应用包里找标志
+                }
             }
+            if (bmp == null) { bmp = FallbackIcon(name, path); fallbackIcons.Add(name); }   // 还是没有：按类别画一个兜底图标
             icons[name] = bmp;
             return bmp;
         }

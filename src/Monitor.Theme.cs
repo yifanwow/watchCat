@@ -112,6 +112,7 @@ namespace WatchDog
             SetPalette(now);
             foreach (IDisposable o in gdi.Where(o => !(o is Font)).ToList()) { o.Dispose(); gdi.Remove(o); }
             shieldBmp.Clear();
+            DropFallbackIcons();   // 兜底图标按新配色重画
             CreateTheme();
             CreateActionBrushes();
             foreach (ActTile t in actTiles) { t.SubColor = M(t.SubColor); t.IconColor = M(t.IconColor); }
