@@ -61,6 +61,26 @@ namespace WatchDog
             try { if (on) Program.RegisterApplicationRestart("", 0); else Program.UnregisterApplicationRestart(); } catch { }
         }
 
+        // 关屏时暂停 NVIDIA App 后台（Display-Power.ps1，由计划任务 WatchCatDisplay 在屏幕关闭 / 点亮时运行）。
+        // 只在装了 NVIDIA App 时显示；任务没装时打开开关 = 重新安装后台任务（要管理员确认一次）
+        static bool NvAppInstalled()
+        {
+            try { using (RegistryKey k = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\NvContainerLocalSystem")) return k != null; }
+            catch { return false; }
+        }
+        bool NvPauseOn() { Dictionary<string, object> d = ReadSettings(); return displayTaskInstalled && (!d.ContainsKey("nvPauseScreenOff") || Json.Bool(d, "nvPauseScreenOff")); }
+        string NvPauseText()
+        {
+            string last = "";
+            try
+            {
+                string p = System.IO.Path.Combine(DataDir, "display-power.log");
+                if (System.IO.File.Exists(p)) { string[] ls = System.IO.File.ReadAllLines(p); if (ls.Length > 0) last = " · 最近：" + ls[ls.Length - 1].Substring(5, 11) + " " + ls[ls.Length - 1].Substring(20); }
+            }
+            catch { }
+            return (displayTaskInstalled ? "屏幕关着时 NVIDIA App 会漏内核内存，关屏暂停、亮屏恢复（显示驱动不动）" : "需要重新安装后台任务（管理员确认一次）") + last;
+        }
+
         // 设置窗口：分四组（启动与后台 / 规则 / 外观 / 看板娘 Fegmi），每组一行说明，每一项右边是开关或选择
         class SetRow { public string Kind, Title; public Func<string> Sub; public Func<bool> Get; public Action Toggle; public int Y; }
         void ShowSettingsWindow()
@@ -82,6 +102,14 @@ namespace WatchDog
                 new SetRow { Kind = "toggle", Title = "自动更新公共规则", Sub = () => "每天从 GitHub 取一次，只下载不上传 · " + RulesUpdateText(), Get = RulesUpdateOn,
                     Toggle = () => { bool on = !RulesUpdateOn(); WriteSetting("rulesUpdate", on); if (on) MaybeUpdateRules(true); say(on ? "已开启：每天自动更新一次公共规则" : "已关闭自动更新（还是用现在的规则）"); } },
             }));
+            if (NvAppInstalled())
+                groups[groups.Count - 1].Value.Add(new SetRow { Kind = "toggle", Title = "关屏时暂停 NVIDIA App 后台", Sub = NvPauseText, Get = NvPauseOn,
+                    Toggle = () =>
+                    {
+                        if (!displayTaskInstalled) { WriteSetting("nvPauseScreenOff", true); RunTool("Install-Watchdog.ps1", "-Quiet"); ReloadSoon(15); say("正在安装后台任务，可能会弹出管理员确认，十几秒后这里会更新"); return; }
+                        bool on = !NvPauseOn(); WriteSetting("nvPauseScreenOff", on);
+                        say(on ? "已开启：下次屏幕关闭时暂停 NVIDIA App 后台，点亮后恢复" : "已关闭：屏幕关闭时不再暂停（已经暂停的，点亮屏幕时照样恢复）");
+                    } });
             groups.Add(new KeyValuePair<string[], List<SetRow>>(new[] { "外观", "切换后立即生效" }, new List<SetRow> {
                 new SetRow { Kind = "theme", Title = "界面主题", Sub = () => Theme.Name + "：" + Theme.Desc },
             }));

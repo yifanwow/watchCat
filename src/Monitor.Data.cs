@@ -429,7 +429,7 @@ namespace WatchDog
             }
             svcPid = map;
             taskInstalled = TaskExists("MemWatchdog");
-            fixTaskInstalled = TaskExists("WatchCatFix");
+            fixTaskInstalled = TaskExists("WatchCatFix"); displayTaskInstalled = TaskExists("WatchCatDisplay");
             // 句柄现场记录（Capture-Handles.ps1 写在 data\incidents\，文件名 时间-程序名.txt）：每个程序最近的一份
             Dictionary<string, string> inc = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try

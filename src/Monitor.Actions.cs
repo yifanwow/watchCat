@@ -308,7 +308,7 @@ namespace WatchDog
             { "Restart-ServiceHard.ps1", new[] { "Name" } }, { "Restart-Group.ps1", new[] { "StepsB64", "Quiet" } },
             { "Restart-Aura.ps1", new[] { "Quiet" } }, { "Restart-GHub.ps1", new[] { "Quiet" } }, { "Restart-SteamWeb.ps1", new[] { "Quiet" } },
             { "Fix-NvTopps.ps1", new[] { "Quiet" } }, { "Analyze-Leak.ps1", new[] { "Name", "Id", "Open" } }, { "Capture-Handles.ps1", new[] { "Name", "Id", "Reason", "Open" } } };
-        bool fixTaskInstalled;
+        bool fixTaskInstalled, displayTaskInstalled;
         string AdminNote { get { return fixTaskInstalled ? "" : "（需要管理员权限，会弹出确认窗口）"; } }
         static Dictionary<string, object> A(params object[] kv)
         {
