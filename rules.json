@@ -21,6 +21,28 @@
     "auto": true
   },
   {
+    "id": "nvidia-app-displayoff-leak",
+    "title": "NVIDIA App 屏幕关闭时句柄泄漏",
+    "target": "nvcontainer",
+    "when": { "process": "nvcontainer", "minHandles": 20000 },
+    "cause": "屏幕关着、电脑开着时，NVIDIA App 的显示组件（nvxdapix.dll）每分钟新开上百个线程去查显示器，线程结束了句柄却不关，同时显卡驱动里的显示配置数据（内核分页池 Gpbm / VdPN）也一直涨。关屏一晚能多出几万个句柄、2–3 GB 内核内存，屏幕点亮后才停。重启 NVIDIA 的两个后台服务能收回句柄和线程（实测约 0.3 GB），显示设置不受影响；驱动里那 2–3 GB 只有重启电脑才能收回。",
+    "fix": { "type": "restartGroup", "steps": [{ "service": "NvContainerLocalSystem" }, { "service": "NVDisplay.ContainerLocalSystem" }], "label": "重启 NVIDIA App 后台和显示容器（屏幕可能闪一下）" },
+    "idleMin": 10,
+    "verify": { "running": ["nvcontainer", "NVDisplay.Container"], "withinSec": 60 },
+    "skipIfGame": true,
+    "auto": true
+  },
+  {
+    "id": "live2d-resourcemonitor",
+    "title": "Live2DViewerEX 资源监视插件句柄泄漏",
+    "target": "ResourceMonitor",
+    "when": { "process": "ResourceMonitor", "minHandles": 6000 },
+    "cause": "Live2DViewerEX 的资源监视插件（ResourceMonitor.exe，基于 LibreHardwareMonitor）每次读硬盘温度 / 健康信息都打开一次物理硬盘，却不关闭；屏幕关闭、硬盘省电时漏得最快。关掉这个插件就能释放，壁纸照常运行，只是壁纸上的资源读数暂停；它只能由 Live2DViewerEX 带着端口号启动，所以要等下次打开 Live2DViewerEX 才会回来。不需要硬盘信息的话，也可以在 Live2DViewerEX 里关掉硬盘监视。",
+    "fix": { "type": "restartGroup", "steps": [{ "process": "ResourceMonitor" }], "label": "关掉 Live2DViewerEX 资源监视插件（下次打开 Live2DViewerEX 时自动回来）" },
+    "idleMin": 5,
+    "auto": true
+  },
+  {
     "id": "audiosrv-leak",
     "title": "Windows 音频服务内存泄漏",
     "target": "svc:Audiosrv",

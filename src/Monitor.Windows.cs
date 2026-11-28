@@ -218,6 +218,7 @@ namespace WatchDog
         {
             if (r.MinMB > 0) return string.Format("超过 {0:N0} MB", r.MinMB);
             if (r.MinFileMB > 0) return string.Format("{0} 超过 {1:N0} MB", Path.GetFileName(r.File ?? ""), r.MinFileMB);
+            if (r.MinHandles > 0) return string.Format("句柄超过 {0:N0} 个", r.MinHandles);
             return "-";
         }
         static string RuleIdle(Rule r) { return (r.IdleMin > 0 ? r.IdleMin + " 分钟没操作" : "随时") + (r.SkipIfGame ? " · 不在游戏时" : ""); }
@@ -274,8 +275,9 @@ namespace WatchDog
                     Graphics g = e.Graphics; Rectangle r = e.Bounds; Rule ru = (Rule)e.Item.Tag;
                     string name = ru.Target ?? ru.Process;
                     ProcRow pr = null; if (name != null) rows.TryGetValue(name, out pr);
-                    double now = pr != null ? pr.PrivMB : 0;
-                    bool over = ru.MinMB > 0 && now >= ru.MinMB;
+                    bool byH = ru.MinMB <= 0 && ru.MinHandles > 0;   // 按句柄数的规则：看句柄最多的那个进程
+                    double now = pr != null ? (byH ? pr.HMax : pr.PrivMB) : 0, lim = byH ? ru.MinHandles : ru.MinMB;
+                    bool over = lim > 0 && now >= lim;
                     Brush bg = e.Item.Selected ? bSel : over && !ru.Disabled ? bRow1 : e.Item.Index % 2 == 1 ? bRowB : bRowA;
                     g.FillRectangle(bg, r);
                     if (e.Item.Index > 0) g.FillRectangle(bDimLine, r.X, r.Y, r.Width, 1);
@@ -306,11 +308,11 @@ namespace WatchDog
                         }
                         case 2:
                             Txt(g, RuleWhen(ru), fCN, cText, r.X + 10, y1, r.Width - 16, 18);
-                            if (ru.MinMB > 0)
+                            if (lim > 0)
                             {
-                                Txt(g, pr != null ? string.Format("现在 {0:N0} MB", now) : "现在没在运行", fCN, over ? cYellow : cGray, r.X + 10, y2, r.Width - 16, 18);
+                                Txt(g, pr != null ? string.Format(byH ? "现在 {0:N0} 个句柄" : "现在 {0:N0} MB", now) : "现在没在运行", fCN, over ? cYellow : cGray, r.X + 10, y2, r.Width - 16, 18);
                                 // 现在用了上限的多少：一条小横条
-                                int bw = r.Width - 28, fw = (int)(bw * Math.Min(1, now / ru.MinMB));
+                                int bw = r.Width - 28, fw = (int)(bw * Math.Min(1, now / lim));
                                 using (SolidBrush tr = new SolidBrush(Color.FromArgb(34, cText))) g.FillRectangle(tr, r.X + 10, r.Bottom - 6, bw, 3);
                                 if (fw > 0) g.FillRectangle(over ? bLv[1] : bLv[0], r.X + 10, r.Bottom - 6, fw, 3);
                             }
@@ -362,7 +364,7 @@ namespace WatchDog
                     Txt(g, "怎么处理", fCNb, cAccent, 32, detTop + 92, 120, 18);
                     Txt(g, (cur.FixLabel.Length > 0 ? cur.FixLabel : "-") + "    ·    处理后核对：" + VerifyText(cur), fCN, cText, 150, detTop + 92, w - 190, 40, tfW);
                     g.FillRectangle(bDimLine, 32, fy - 14, w - 64, 1);
-                    Txt(g, "上限（MB）", fCN, cGray, 32, fy, 150, 18);
+                    Txt(g, cur != null && cur.MinMB <= 0 && cur.MinFileMB <= 0 && cur.MinHandles > 0 ? "上限（句柄数）" : "上限（MB）", fCN, cGray, 32, fy, 150, 18);
                     Txt(g, "空闲多少分钟才动手（0 = 随时）", fCN, cGray, 220, fy, 260, 18);
                     Txt(g, "超过上限时", fCN, cGray, 520, fy, 200, 18);
                     Txt(g, "这条规则", fCN, cGray, 800, fy, 200, 18);
@@ -404,8 +406,8 @@ namespace WatchDog
                 {
                     foreach (Control c in editors) c.Visible = cur != null;
                     if (cur == null) { body.Invalidate(); return; }
-                    tbMB.Text = (cur.MinMB > 0 ? cur.MinMB : cur.MinFileMB).ToString("0");
-                    tbMB.Enabled = cur.MinMB > 0 || cur.MinFileMB > 0;
+                    tbMB.Text = (cur.MinMB > 0 ? cur.MinMB : cur.MinFileMB > 0 ? cur.MinFileMB : cur.MinHandles).ToString("0");
+                    tbMB.Enabled = cur.MinMB > 0 || cur.MinFileMB > 0 || cur.MinHandles > 0;
                     tbIdle.Text = cur.IdleMin.ToString("0");
                     editAuto = cur.Auto && cur.FixType != "none"; editOn = !cur.Disabled;
                     bAutoY.Enabled = cur.FixType != "none";
@@ -419,7 +421,7 @@ namespace WatchDog
                 {
                     if (cur == null) return;
                     double mb, idle;
-                    if (!double.TryParse(tbMB.Text.Trim(), out mb) || mb < 0) { Say("上限请填一个数字（MB）。"); return; }
+                    if (!double.TryParse(tbMB.Text.Trim(), out mb) || mb < 0) { Say("上限请填一个数字。"); return; }
                     if (!double.TryParse(tbIdle.Text.Trim(), out idle) || idle < 0) { Say("空闲时间请填一个数字（分钟），0 表示随时。"); return; }
                     try { SaveRuleEdit(cur, mb, idle, editAuto, !editOn); } catch (Exception ex) { Say("保存失败：" + ex.Message); return; }
                     log = ReadActionLog(); fill(); select();
@@ -459,6 +461,7 @@ namespace WatchDog
             if (when == null) { when = new Dictionary<string, object>(); d["when"] = when; }
             if (when.ContainsKey("minMB") || (!when.ContainsKey("minFileMB") && r.MinMB > 0)) when["minMB"] = limit;
             else if (when.ContainsKey("minFileMB")) when["minFileMB"] = limit;
+            else if (when.ContainsKey("minHandles")) when["minHandles"] = limit;
             if (idle > 0) d["idleMin"] = idle; else d.Remove("idleMin");
             d["auto"] = auto;
             if (disabled) d["disabled"] = true; else d.Remove("disabled");

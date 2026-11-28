@@ -14,9 +14,9 @@ namespace WatchDog
         // 规则管的东西现在多大：程序的内存，或者文件（NVIDIA 数据库）的大小。拿不到返回 false
         bool RuleValue(Rule r, out double cur, out double limit)
         {
-            cur = -1; limit = r.MinMB > 0 ? r.MinMB : r.MinFileMB;
+            cur = -1; limit = r.MinMB > 0 ? r.MinMB : r.MinFileMB > 0 ? r.MinFileMB : r.MinHandles;
             if (r.MinFileMB > 0 && r.File != null) { double? f; if (fileMB.TryGetValue(r.File, out f) && f != null) cur = f.Value; }
-            else if (r.Process != null) { ProcRow row; if (rows.TryGetValue(r.Process, out row)) cur = row.PrivMB; }
+            else if (r.Process != null) { ProcRow row; if (rows.TryGetValue(r.Process, out row)) cur = r.MinMB > 0 || r.MinHandles <= 0 ? row.PrivMB : row.HMax; }
             return cur >= 0;
         }
         // 现在 / 上限；拿不到或没有上限返回 -1

@@ -2,7 +2,7 @@
 // 给一个进程号，列出它手里的句柄：每类多少个；注册表键 / 事件 / 共享内存这些的具体名字（同名的合并计数）；
 // 线程句柄指向哪个进程的线程、线程是否已经结束、线程从哪个模块启动；进程句柄指向谁。
 // 需要管理员权限才能看系统服务的句柄。只读：只复制句柄来查询，查完立即关闭，不改动目标进程。
-// 不查文件句柄的名字：对某些管道 / 设备句柄查名字会卡住。
+// 文件句柄：管道类的不查名字（查名字可能卡住），其余放在后台线程里查，超时就不再查后面的。
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -25,6 +25,25 @@ public static class HandleProbe
     [DllImport("kernel32.dll")] static extern bool GetExitCodeThread(IntPtr h, out uint code);
     [DllImport("kernel32.dll")] static extern int GetProcessId(IntPtr h);
     [DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr h, out uint code);
+    [DllImport("kernel32.dll")] static extern int GetFileType(IntPtr h);
+
+    // 文件句柄的名字：管道（GetFileType=3）不查；其余在后台线程里查，200 毫秒没返回就算卡住，之后的文件句柄都不再查
+    static bool fileStuck, stuckNow;
+    static string FileName(IntPtr h)
+    {
+        int ft = GetFileType(h);
+        string kind = ft == 1 ? "文件" : ft == 2 ? "设备" : ft == 3 ? "管道" : "其他";
+        if (ft == 3) return "[管道]";
+        if (fileStuck) return "[" + kind + "] (没查，前面有句柄查名字卡住了)";
+        string n = null; IntPtr b = Marshal.AllocHGlobal(4096);
+        System.Threading.Thread t = new System.Threading.Thread(() => { try { n = ObjName(h, b); } catch { } });
+        t.IsBackground = true; t.Start();
+        if (!t.Join(200)) { fileStuck = stuckNow = true; return "[" + kind + "] (查名字卡住)"; }   // 卡住的线程还拿着缓冲区，不释放
+        Marshal.FreeHGlobal(b);
+        if (n == null) return "[" + kind + "] (读不到名字)";
+        // 同一类设备 / 文件夹下的文件合并：去掉末尾的序号和文件名里的数字
+        return "[" + kind + "] " + System.Text.RegularExpressions.Regex.Replace(n, @"\d+", "#");
+    }
 
     const uint PROCESS_DUP_HANDLE = 0x40, DUPLICATE_SAME_ACCESS = 2, STILL_ACTIVE = 259;
     // 查名字的句柄类型（这些查名字不会卡住）
@@ -116,7 +135,7 @@ public static class HandleProbe
 
     public static string Probe(int pid, int maxQueries)
     {
-        StringBuilder o = new StringBuilder();
+        StringBuilder o = new StringBuilder(); fileStuck = stuckNow = false;
         try { Process.EnterDebugMode(); } catch { }
         Dictionary<int, string> types = TypeNames();
         List<long[]> hs = HandlesOf(pid);
@@ -137,8 +156,8 @@ public static class HandleProbe
             foreach (KeyValuePair<string, int> tc in byType.OrderByDescending(x => x.Value))
             {
                 string type = tc.Key;
-                bool isThread = type == "Thread", isProc = type == "Process";
-                if (!Named.Contains(type) && !isThread && !isProc) continue;
+                bool isThread = type == "Thread", isProc = type == "Process", isFile = type == "File";
+                if (!Named.Contains(type) && !isThread && !isProc && !isFile) continue;
                 List<long[]> of = hs.Where(h => { string t; return types.TryGetValue((int)h[1], out t) && t == type; }).ToList();
                 int step = Math.Max(1, (of.Count + maxQueries - 1) / maxQueries);
                 Dictionary<string, int> names = new Dictionary<string, int>(), owner = new Dictionary<string, int>(), start = new Dictionary<string, int>();
@@ -174,9 +193,10 @@ public static class HandleProbe
                             uint code; bool ended = GetExitCodeProcess(d, out code) && code != STILL_ACTIVE;
                             Inc(owner, ProcName(tp, pname) + (ended ? "（已退出）" : ""));
                         }
+                        else if (isFile) Inc(names, FileName(d));
                         else { string n = ObjName(d, buf); Inc(names, n ?? "(读不到名字)"); }
                     }
-                    finally { CloseHandle(d); }
+                    finally { if (stuckNow) stuckNow = false; else CloseHandle(d); }   // 卡住的那个句柄还在被查询，不关
                 }
                 string scale = step > 1 ? string.Format("（{0:N0} 个里均匀抽了 {1:N0} 个，下面的数已按比例放大）", of.Count, sampled) : "";
                 Func<Dictionary<string, int>, Dictionary<string, int>> up = x => x.ToDictionary(k => k.Key, k => k.Value * step);

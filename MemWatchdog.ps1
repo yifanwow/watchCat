@@ -70,6 +70,20 @@ function Get-TargetMB($name) {
     PrivMB $procs
 }
 
+# Largest handle count among the rule's processes ("svc:Name" = the process hosting that service). $null = not running.
+function Get-TargetHandles($name) {
+    if ($name -like 'svc:*') {
+        $svc = Get-CimInstance Win32_Service -Filter "Name='$($name.Substring(4))'" -ErrorAction SilentlyContinue
+        if (-not $svc -or $svc.ProcessId -eq 0) { return $null }
+        $p = Get-Process -Id $svc.ProcessId -ErrorAction SilentlyContinue
+        if (-not $p) { return $null }
+        return $p.HandleCount
+    }
+    $procs = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
+    if (-not $procs) { return $null }
+    ($procs | Measure-Object HandleCount -Maximum).Maximum
+}
+
 # Returns a description of why the rule matched, or $null. All conditions in "when" must hold.
 function Test-Rule($r) {
     $w = $r.when; $why = @()
@@ -77,6 +91,12 @@ function Test-Rule($r) {
         $mb = Get-TargetMB $w.process
         if ($null -eq $mb) { return $null }
         if ($w.minMB) { if ($mb -lt $w.minMB) { return $null }; $why += ('{0} {1} MB >= {2} MB' -f $w.process, $mb, $w.minMB) }
+        # handles: the single process with the most handles (only one of the 4 nvcontainer processes leaks)
+        if ($w.minHandles) {
+            $hc = Get-TargetHandles $w.process
+            if ($null -eq $hc -or $hc -lt $w.minHandles) { return $null }
+            $why += ('{0} {1} handles >= {2}' -f $w.process, $hc, $w.minHandles)
+        }
     }
     if ($w.file) {
         if (-not (Test-Path -LiteralPath $w.file)) { return $null }

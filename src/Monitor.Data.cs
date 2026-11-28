@@ -24,7 +24,7 @@ namespace WatchDog
     {
         public Dictionary<string, object> Raw;
         public string Id, Title, Target, Cause, Process, File, FixType, FixLabel, FixService, FixScript;
-        public double MinMB, MinFileMB, IdleMin; public bool Auto, Disabled, SkipIfGame;
+        public double MinMB, MinFileMB, MinHandles, IdleMin; public bool Auto, Disabled, SkipIfGame;
         public string Source = "公共";   // 公共 = rules.json；我的 = rules.local.json；改过 = 我的设置覆盖了同 id 的公共规则
         public static Rule From(Dictionary<string, object> d)
         {
@@ -32,7 +32,7 @@ namespace WatchDog
             r.Id = Json.Str(d, "id") ?? ""; r.Title = Json.Str(d, "title") ?? r.Id; r.Cause = Json.Str(d, "cause") ?? "";
             Dictionary<string, object> w = Json.Obj(d, "when"), f = Json.Obj(d, "fix");
             r.Process = Json.Str(w, "process"); r.File = Json.Str(w, "file");
-            r.MinMB = Json.Num(w, "minMB"); r.MinFileMB = Json.Num(w, "minFileMB");
+            r.MinMB = Json.Num(w, "minMB"); r.MinFileMB = Json.Num(w, "minFileMB"); r.MinHandles = Json.Num(w, "minHandles");
             r.FixType = Json.Str(f, "type") ?? "none"; r.FixLabel = Json.Str(f, "label") ?? "";
             r.FixService = Json.Str(f, "service"); r.FixScript = Json.Str(f, "script");
             r.Auto = Json.Bool(d, "auto"); r.Disabled = Json.Bool(d, "disabled"); r.SkipIfGame = Json.Bool(d, "skipIfGame");
@@ -569,6 +569,8 @@ namespace WatchDog
                 {
                     ProcRow row; if (!rows.TryGetValue(r.Process, out row)) continue;
                     if (r.MinMB > 0) { if (row.PrivMB < r.MinMB) continue; why.Add(string.Format("现在 {0:N0} MB，超过上限 {1} MB", row.PrivMB, r.MinMB)); }
+                    // 句柄：看同名进程里句柄最多的那一个（例如 4 个 nvcontainer 里漏的只有一个）
+                    if (r.MinHandles > 0) { if (row.HMax < r.MinHandles) continue; why.Add(string.Format("句柄 {0:N0} 个，超过上限 {1:N0} 个", row.HMax, r.MinHandles)); }
                 }
                 if (r.File != null)
                 {
