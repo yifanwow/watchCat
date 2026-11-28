@@ -99,6 +99,19 @@ namespace WatchDog
                 else if (tp != null && tp.Span >= minSpan && tp.Slope >= 15 && tp.Growth >= 200 && tp.R2 >= r2b) { l = 1; b2 = "缓慢上涨"; t2 = "内核内存在缓慢上涨"; y2 = desc("分页池", tp); }
                 if (l > lvl) { lvl = l; badge = b2; title = t2; why = y2; }
             }
+            // 已经不涨了：最近 1 小时首尾比，分页 / 非分页池都没再涨，最后两个点之间也没在涨。泄漏停了（比如屏幕点亮后），
+            // 只是涨上去的部分驱动不归还：不再按"疑似泄漏"报红，改成黄色的"已停涨"，告诉用户只有重启电脑才能收回
+            if (lvl >= 1 && rowsK.Count > 0)
+            {
+                List<SysRow> rec = rowsK.Where(x => x.T >= last.AddHours(-1.05)).ToList();
+                SysRow end = rec.Count > 0 ? rec[rec.Count - 1] : null, prev = rec.Count > 1 ? rec[rec.Count - 2] : null;
+                if (rec.Count >= 4 && (end.T - rec[0].T).TotalHours >= 0.8 && end.PoolP - rec[0].PoolP < 60 && end.PoolN - rec[0].PoolN < 30
+                    && end.PoolP - prev.PoolP < 20 && end.PoolN - prev.PoolN < 10)
+                {
+                    lvl = 1; badge = "已停涨"; title = "内核内存涨过，现在已停";
+                    why += string.Format("；最近 {0}没再涨，涨上去的部分驱动不归还，重启电脑可以收回", SpanText(Math.Max(1, (end.T - rec[0].T).TotalHours)));
+                }
+            }
             // 2. 实时（窗口的数据，至少 30 分钟）：只说"在涨，观察中"
             if (lvl == 0)
             {
@@ -224,6 +237,16 @@ namespace WatchDog
         }
 
         int ResLevel(string name) { Issue i; return resIssues.TryGetValue(name, out i) ? i.Level : 0; }
+        // 稳定性一栏的句柄 / 图形资源标签：这类问题比内存的判断更严重（或同样严重、但内存那边不是泄漏 / 已知问题）时显示，否则返回 null
+        string ResTag(string name, Rating rt)
+        {
+            Issue i; if (!resIssues.TryGetValue(name, out i) || i.Level < 1) return null;
+            int ml = rt != null ? rt.Level : -1;
+            bool memLeak = rt != null && (rt.Text == "疑似泄漏" || rt.Text == "持续泄漏" || rt.Text == "已知问题");
+            if (i.Level < ml || (i.Level == ml && memLeak)) return null;
+            if (i.Title.Contains("图形资源")) return i.Level >= 2 ? "图形资源告急" : "图形资源上涨";
+            return i.Title.Contains("疑似句柄泄漏") ? "句柄泄漏" : i.Title.Contains("异常多") ? "句柄过多" : "句柄上涨";
+        }
 
         // 每个程序的句柄 / GDI / USER 实时数据：句柄最多的 15 个、图形资源最多的 15 个、有问题的、选中的
         void RecordResources(List<ProcRow> real, DateTime nowU)

@@ -950,7 +950,10 @@ namespace WatchDog
                     if (rt == null) return;
                     int ml = rt.Level;
                     string tag = rt.Text;
-                    bool big = ml <= 0 && pr != null && pr.PrivMB >= BigMB;   // 没问题但占用大：单独一种标签（不算问题，不改背景色）
+                    // 句柄 / 图形资源有问题：单独的标签（句柄泄漏 / 句柄过多 / 句柄上涨 / 图形资源…），颜色按那个问题的级别
+                    string rtag = ResTag(name, rt);
+                    if (rtag != null) { tag = rtag; ml = ResLevel(name); }
+                    bool big = rtag == null && ml <= 0 && pr != null && pr.PrivMB >= BigMB;   // 没问题但占用大：单独一种标签（不算问题，不改背景色）
                     if (big) tag = "占用大";
                     Size ts = TextRenderer.MeasureText(g, tag, fCNb, new Size(200, 30), tfL);
                     Rectangle pill = new Rectangle(r.X + 8, r.Y + (r.Height - 22) / 2, Math.Min(r.Width - 16, ts.Width + 16), 22);
