@@ -24,6 +24,7 @@ namespace WatchDog
             LoadTheme();
             CreateTheme();
             LoadNotes();
+            LoadEco();   // 用户选过"降低性能消耗"的程序：启动时重新开上
             LoadProfile();
             BuildUI();
             if (!selfTest) BuildTray();

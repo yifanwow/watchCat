@@ -36,7 +36,7 @@ namespace WatchDog
 
             ToolStripItem hFix = Header("处理");
             menuFix = Item("", () => cCyan, "修复 / 重启", null, delegate { FixSelected(); });
-            menuEco = Item("", () => cCyan, "降低性能消耗", "低优先级 · 不影响使用", delegate { ToggleEco(selected); });
+            menuEco = Item("", () => cCyan, "降低性能消耗", "低优先级 · 以后打开也保持", delegate { ToggleEco(selected); });
             menuEnd = Item("", () => cRed, "结束程序", null, delegate { KillTarget(selected); });
             menuOpen = Item("", () => cGray, "打开文件位置", null, delegate { OpenLocation(selected); });
             menuNote = Item("", () => cGray, "写备注", null, delegate { EditNote(selected); });
@@ -84,7 +84,7 @@ namespace WatchDog
                 menuEco.Visible = EcoAllowed(n);
                 bool eco = ecoNames.Contains(n);
                 menuEco.Text = eco ? "恢复正常性能消耗" : "降低性能消耗";
-                SetHint(menuEco, eco ? "恢复正常优先级" : "低优先级 · 不影响使用");
+                SetHint(menuEco, eco ? "恢复正常优先级 · 以后不再降低" : "低优先级 · 以后打开也保持");
                 menuEnd.Visible = !prot;
                 menuNote.Text = HasNote(n) ? "改备注" : "写备注";
                 menuIncident.Visible = incidents.ContainsKey(n);
@@ -189,7 +189,7 @@ namespace WatchDog
         }
 
         // ---------- 节能模式（效率模式）----------
-        HashSet<string> ecoNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // 用户开了节能模式的程序（只在这次运行里有效）
+        HashSet<string> ecoNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // 用户开了节能模式的程序（记在 settings.json 的 ecoApps，下次启动、程序重新打开时照样开上）
         Dictionary<int, uint> ecoOrig = new Dictionary<int, uint>();                          // 进程 id → 原来的优先级，退出节能时还原
         // 除了系统关键进程以外，这些也不碰：外壳、输入法、音频、开始菜单 / 搜索、Claude 自己和本程序
         static readonly HashSet<string> EcoNever = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
@@ -198,6 +198,17 @@ namespace WatchDog
         internal void EcoMarkForSnapshot(string n) { ecoNames.Add(n); }   // 自测截图：只在界面上标成节能，不改真实优先级
         bool EcoAllowed(string n) { return n != null && !n.StartsWith("svc:") && !Protected.Contains(n) && !EcoNever.Contains(n); }
 
+        // 启动时：读回用户选过的程序，正在运行的马上开上；没在运行的等它打开后由 EcoKeep 开上（自测时不读，免得改真实优先级）
+        void LoadEco()
+        {
+            if (selfTest) return;
+            System.Collections.IEnumerable list = ReadSettings().ContainsKey("ecoApps") ? ReadSettings()["ecoApps"] as System.Collections.IEnumerable : null;
+            if (list == null) return;
+            foreach (object o in list) { string n = o as string; if (EcoAllowed(n)) ecoNames.Add(n); }
+            if (ecoNames.Count > 0) EcoKeep();
+        }
+        void SaveEco() { if (!selfTest) WriteSetting("ecoApps", ecoNames.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).Cast<object>().ToArray()); }
+
         void ToggleEco(string n)
         {
             if (!EcoAllowed(n)) return;
@@ -205,6 +216,7 @@ namespace WatchDog
             int ok, fail; ApplyEco(n, on, out ok, out fail);
             if (on) ecoNames.Add(n); else ecoNames.Remove(n);
             if (ok == 0 && fail > 0) { if (on) ecoNames.Remove(n); Say(n + " 是以管理员身份运行的，普通权限改不了它的优先级。"); }
+            SaveEco();
             detail.Invalidate();
         }
         // 对这个名字的所有进程开 / 关节能模式
@@ -251,7 +263,7 @@ namespace WatchDog
                 if (fresh) { int ok, fail; ApplyEco(n, true, out ok, out fail); }
             }
         }
-        // 真正退出时：把开了节能的程序都还原
+        // 真正退出时：把开了节能的程序都还原（只还原优先级，不改 settings.json 里记住的选择）
         void EcoRestoreAll()
         {
             foreach (string n in ecoNames.ToList()) { int ok, fail; ApplyEco(n, false, out ok, out fail); }
